@@ -30,6 +30,7 @@ add_compile_case(include test_include/main.h)
 add_compile_case(pound_ops test_pound_ops.cpp)
 add_compile_case(gcc_profile test_gcc_profile.cpp)
 add_compile_case(standard_headers test_standard_headers.cpp ${GCC_IMPLICIT_INCLUDE_FLAGS})
+add_compile_case(standard_headers_auto test_standard_headers.cpp)
 add_compile_case(windows_header test_windows_header.cpp ${GCC_IMPLICIT_INCLUDE_FLAGS})
 add_compile_case(angle_header_name test_angle_header_name.cpp
                  -I ${CMAKE_CURRENT_SOURCE_DIR})
@@ -71,7 +72,7 @@ set_tests_properties(compile_comments
 function(add_negative_case name input)
     set(output ${CMAKE_CURRENT_BINARY_DIR}/negative_${name}.i)
     add_test(NAME negative_${name}
-        COMMAND ${PREPROCESSOR} -P
+        COMMAND ${PREPROCESSOR} -P ${ARGN}
                 ${CMAKE_CURRENT_SOURCE_DIR}/negative/${input}
                 -o ${output})
     set_tests_properties(negative_${name} PROPERTIES WILL_FAIL TRUE)
@@ -84,3 +85,4 @@ add_negative_case(missing_include missing_include.cpp)
 add_negative_case(error_directive error_directive.cpp)
 add_negative_case(unterminated_string unterminated_string.cpp)
 add_negative_case(missing_angle_include missing_angle_include.cpp)
+add_negative_case(nostdinc_angle nostdinc_angle.cpp -nostdinc)

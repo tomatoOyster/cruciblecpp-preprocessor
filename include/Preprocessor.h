@@ -90,6 +90,8 @@ struct PreprocessorOptions {
     bool dropUnknownPragmas = false;
     bool outputOnError = true;
     bool verbose = false;
+    // Query g++/gcc from PATH for its implicit include directories.
+    bool autoGccIncludes = true;
 
     int maxIncludeDepth = 200;
     int maxErrors = 20;

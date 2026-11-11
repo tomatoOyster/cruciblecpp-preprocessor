@@ -1,3 +1,4 @@
+#include "GccDiscovery.h"
 #include "Preprocessor.h"
 
 #include <cstdlib>
@@ -18,6 +19,12 @@ std::filesystem::path pathFromUtf8(std::string_view text) {
     const std::u8string value(
         reinterpret_cast<const char8_t*>(text.data()), text.size());
     return std::filesystem::path(value);
+}
+
+std::string pathToUtf8(const std::filesystem::path& path) {
+    const std::u8string value = path.generic_u8string();
+    return std::string(reinterpret_cast<const char*>(value.data()),
+                       value.size());
 }
 
 #ifdef _WIN32
@@ -67,6 +74,9 @@ void printUsage(std::ostream& out) {
            "  -o, --output <file>          Write output to <file> (default: stdout)\n"
            "  -I, --include-dir <dir>      Add a user include directory (repeatable)\n"
            "  -isystem <dir>               Add a system include directory (repeatable)\n"
+           "  -nostdinc                    Do not auto-discover GCC include directories\n"
+           "  --no-gcc-includes            Same as -nostdinc\n"
+           "  --print-gcc-includes         Print discovered GCC include paths and exit\n"
            "  -D, --define <name[=value]>  Define a macro (repeatable, ordered)\n"
            "  -U, --undef <name>           Undefine a macro (repeatable, ordered)\n"
            "  -include <file>              Force-include a file (repeatable)\n"
@@ -124,7 +134,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (arg == "--version") {
-            std::cout << "cruciblecpp-preprocessor 1.0.2\n";
+            std::cout << "cruciblecpp-preprocessor 2.0.0\n";
             return 0;
         }
         if (arg == "-o" || arg == "--output") {
@@ -140,6 +150,22 @@ int main(int argc, char** argv) {
             options.systemDirs.push_back(
                 pathFromUtf8(nextValue(arg.c_str())));
             continue;
+        }
+        if (arg == "-nostdinc" || arg == "--no-gcc-includes") {
+            options.autoGccIncludes = false;
+            continue;
+        }
+        if (arg == "--print-gcc-includes") {
+            const crucible::GccDiscovery discovery =
+                crucible::discoverGccFromPath();
+            if (!discovery.found) {
+                std::cerr << "error: " << discovery.error << '\n';
+                return 1;
+            }
+            for (const auto& dir : discovery.includeDirs) {
+                std::cout << pathToUtf8(dir) << '\n';
+            }
+            return discovery.includeDirs.empty() ? 1 : 0;
         }
         if (arg == "-D" || arg == "--define") {
             options.commandActions.push_back(

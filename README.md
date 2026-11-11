@@ -1,7 +1,8 @@
 # CrucibleCpp Preprocessor
 
-> **V1.0.2** — Windows x64 独立 C++ 预处理器，直接替代 `g++ -E` 的预处理步骤。  
-> [下载 V1.0.2](https://github.com/tomatoOyster/cruciblecpp-preprocessor/releases/latest) · [Release Notes](RELEASE_NOTES_v1.0.2.md)
+> **V2.0.0** — Windows x64 独立 C++ 预处理器，自动发现 PATH 中的 GCC 头文件目录，直接替代 `g++ -E` 的预处理步骤。
+>
+> [Release Notes](RELEASE_NOTES_v2.0.0.md)
 
 一个用 C++20 实现的独立 C++ 预处理器，兼容矩阵锁定为：
 
@@ -12,11 +13,12 @@
 **范围声明：**
 
 - 支持 `#include "..."` 和 `#include <...>`。
-- 引号头：当前文件目录 → `-I` → `-isystem`。
-- 尖括号头：`-I` → `-isystem`；**不搜索当前文件目录**。
-- 不自动搜索 sysroot / 系统 include 目录；所有路径由用户或 CMake 显式传入。
-- CMake 可把 `CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES` 作为 `-isystem` 显式传给本工具。
-- 硬编码 GCC 15.2（C++20）预定义宏 profile，不运行时查询 `g++`。
+- 引号头：当前文件目录 → `-I` → `-isystem` → PATH 中 GCC 的 include 目录。
+- 尖括号头：`-I` → `-isystem` → PATH 中 GCC 的 include 目录；**不搜索当前文件目录**。
+- 启动时从 `PATH` 查找 `g++.exe` / `gcc.exe` / `c++.exe`，执行 `g++ -E -v` 获取其隐式 include 搜索列表；不需要手动传 `-isystem`。
+- `-nostdinc` 可关闭自动发现；显式 `-I` / `-isystem` 仍然有效。
+- 硬编码 GCC 15.2（C++20）预定义宏 profile；include 路径在运行时查询，宏 profile 不查询。
+- CMake 仍可把 `CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES` 作为 `-isystem` 显式传入；现在这是可选的。
 - 只针对 Windows x64 + MinGW-w64 UCRT64 + GCC 15.2.0 + C++20；不支持其他 ABI/GCC 版本/Linux/MSVC/Clang。
 - 提供 CMake/Ninja 可用的 depfile（`-MD/-MF/-MT`）。
 
@@ -92,6 +94,7 @@ cruciblecpp-preprocessor/
 │   ├── Preprocessor.h
 │   ├── Token.h
 │   ├── FileReader.h
+│   ├── GccDiscovery.h
 │   ├── Tokenizer.h
 │   ├── MacroRegistry.h
 │   ├── MacroExpander.h
@@ -104,6 +107,7 @@ cruciblecpp-preprocessor/
 │   ├── Preprocessor.cpp
 │   ├── Token.cpp
 │   ├── FileReader.cpp
+│   ├── GccDiscovery.cpp
 │   ├── Tokenizer.cpp
 │   ├── MacroRegistry.cpp
 │   ├── MacroExpander.cpp
@@ -161,7 +165,7 @@ ctest --test-dir build --output-on-failure
 
 ```powershell
 g++ -std=c++20 -Wall -Wextra -Iinclude `
-    src/Token.cpp src/FileReader.cpp src/Tokenizer.cpp `
+    src/Token.cpp src/FileReader.cpp src/GccDiscovery.cpp src/Tokenizer.cpp `
     src/MacroRegistry.cpp src/MacroExpander.cpp `
     src/ConditionalEngine.cpp src/IncludeHandler.cpp `
     src/SpecialOperator.cpp src/OutputWriter.cpp `
@@ -226,7 +230,9 @@ g++ -std=c++20 -fsyntax-only output\hello.i
 ```text
 -o, --output <file>          输出文件；默认 stdout
 -I, --include-dir <dir>      用户头文件目录（可重复）
--isystem <dir>               系统头文件目录（可重复）
+-isystem <dir>               系统头文件目录（可重复；优先于自动发现）
+-nostdinc                    关闭 PATH 中 GCC 的自动 include 发现
+--print-gcc-includes         打印发现的 GCC include 目录并退出
 -D, --define <name[=value]>  定义宏（可重复，按顺序应用）
 -U, --undef <name>           取消宏（可重复，按顺序应用）
 -include <file>              强制包含文件（可重复）
@@ -265,20 +271,35 @@ g++ -std=c++20 -fsyntax-only output\hello.i
 
 ### 标准库头
 
-CMake 集成会通过 `CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES` 把 GCC 的 C++/C 头路径作为 `-isystem` 传入，因此 `<vector>`、`<string>`、`<iostream>` 等可以直接使用。
+启动时会从 `PATH` 查找 GCC，调用：
 
-直接命令行使用时必须手动传这些目录，例如：
+```text
+g++ -std=c++20 -E -v -x c++ -
+```
+
+解析 `#include <...> search starts here:` 到 `End of search list.` 之间的目录，自动加入尖括号搜索路径。
+
+因此直接这样即可：
 
 ```powershell
-.\build\cruciblecpp-preprocessor.exe -P `
-    -isystem D:/vsC++/ucrt64/include/c++/15.2.0 `
-    -isystem D:/vsC++/ucrt64/include/c++/15.2.0/x86_64-w64-mingw32 `
-    -isystem D:/vsC++/ucrt64/include/c++/15.2.0/backward `
-    -isystem D:/vsC++/ucrt64/lib/gcc/x86_64-w64-mingw32/15.2.0/include `
-    -isystem D:/vsC++/ucrt64/include `
-    -isystem D:/vsC++/ucrt64/lib/gcc/x86_64-w64-mingw32/15.2.0/include-fixed `
-    input.cpp -o output\input.i
+.\build\cruciblecpp-preprocessor.exe -P input.cpp -o output\input.i
 ```
+
+查看实际发现的路径：
+
+```powershell
+.\build\cruciblecpp-preprocessor.exe --print-gcc-includes
+```
+
+关闭自动发现：
+
+```powershell
+.\build\cruciblecpp-preprocessor.exe -nostdinc -isystem D:/path/to/include input.cpp -o output\input.i
+```
+
+`-v` 也会打印使用的 GCC 路径和每个 include 目录。
+
+CMake 仍可显式传 `CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES`，但不再是必需步骤。
 
 ### 退出码
 
@@ -293,8 +314,8 @@ CMake 集成会通过 `CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES` 把 GCC 的 C++/C
 不要把本工具硬塞进 `CMAKE_CXX_COMPILER_LAUNCHER`；它是替代 `-E` 的独立预处理步骤。推荐用 `add_custom_command` + `DEPFILE`：
 
 ```cmake
-# 把 GCC 的隐式 include 目录显式传给预处理器。
-# 预处理器本身不探测 sysroot。
+# 可选：显式传 GCC 隐式 include 目录。
+# 不传时，预处理器会从 PATH 自动发现。
 set(CPP_PRE_INCLUDES)
 foreach(dir IN LISTS CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES)
     list(APPEND CPP_PRE_INCLUDES -isystem "${dir}")
@@ -370,7 +391,7 @@ CAT(, x)                  // x
 
 ## 测试
 
-当前包含 **31 个 CTest 用例**（正例会预处理后再用 GCC 编译，负例验证退出码）。
+当前包含 **34 个 CTest 用例**（正例会预处理后再用 GCC 编译，负例验证退出码）。
 
 测试覆盖：
 
@@ -380,10 +401,11 @@ CAT(, x)                  // x
 - 条件编译、`defined`、`#elifdef`、表达式优先级、短路；
 - include 搜索、include guard、`#pragma once`、`__has_include`；
 - 尖括号 `<sub.h>`、Windows 反斜杠/双斜杠 header name、真实 libstdc++ 标准头（`<vector>`/`<string>`/`<iostream>` 等）和 `<windows.h>`；
+- 不传 `-isystem` 的 PATH 自动发现标准头测试；
 - GCC 15.2 profile、`__has_builtin`/`__has_attribute`；
 - `#line`、`#error`、`#warning`、pragma；
 - CMake depfile（`-MD -MF -MT`）与依赖内容检查；
-- 负例：未闭合条件、未闭合宏调用、缺失 quote/angle include、非法重定义、未闭合字符串。
+- 负例：未闭合条件、未闭合宏调用、缺失 quote/angle include、非法重定义、未闭合字符串、`-nostdinc` 下的标准头。
 
 每个正例测试会先把 `.i` 输出编译一遍，确保输出是有效 C++。
 
@@ -391,8 +413,9 @@ CAT(, x)                  // x
 
 - 不实现 C++20 modules 的 `import`/`export` 语义；`import` 作为普通 token 输出。
 - 不实现 C23 `#embed`（C++ 标准没有该指令）。
-- 不自动搜索 sysroot / 系统 include 目录；所有头路径由用户或 CMake 通过 `-I` / `-isystem` 显式提供。
-- 直接命令行使用 `<vector>` 等标准库头时，必须自己传 UCRT64 GCC 15.2 的 include 目录；CMake 集成会自动传 `CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES`。
+- 需要系统 `PATH` 中能找到 `g++.exe` / `gcc.exe` / `c++.exe`；找不到时标准库头无法自动解析，可手动传 `-isystem`。
+- 自动发现只支持 Windows；其他平台会退化为显式 `-I` / `-isystem`。
+- `-nostdinc` 关闭自动发现；显式路径仍然有效。
 - 硬编码 GCC 15.2（C++20）宏 profile；换 GCC 版本或标准需要重新生成 profile。
 - 不提供 `__has_*` 的完整 GCC 表；只覆盖常用 builtin/attribute 集合。
 - 不实现 trigraph（C++17 已移除）。

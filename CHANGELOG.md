@@ -1,5 +1,22 @@
 # Changelog
 
+## V2.0.0 — 2026-11-11
+
+### 新增
+
+- 自动从 `PATH` 查找 `g++.exe` / `gcc.exe` / `c++.exe`。
+- 通过 `g++ -std=c++20 -E -v -x c++ -` 获取 GCC 的隐式 include 搜索列表。
+- 尖括号标准库头无需再手动传 `-isystem`。
+- `--print-gcc-includes` 查看发现的路径。
+- `-nostdinc` / `--no-gcc-includes` 关闭自动发现。
+- `-v` 输出使用的 GCC、版本和 include 目录。
+
+### 测试
+
+- 新增“无显式 `-isystem` 的标准头”测试。
+- 新增 `-nostdinc` 负例。
+- 完整 CTest 34 个用例。
+
 ## V1.0.2 — 2026-11-11
 
 ### 变更

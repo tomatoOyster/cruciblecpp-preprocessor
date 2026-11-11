@@ -6,7 +6,7 @@
 build\cruciblecpp-preprocessor.exe
 ```
 
-这是 Windows x64 静态链接版本（不需要额外 MinGW DLL），版本 `1.0.2`，目标为 **MinGW-w64 UCRT64 GCC 15.2.0 + C++20**。
+这是 Windows x64 静态链接版本（不需要额外 MinGW DLL），版本 `2.0.0`，目标为 **MinGW-w64 UCRT64 GCC 15.2.0 + C++20**。
 
 ## 先跑两个示例
 
@@ -34,7 +34,7 @@ g++ -std=c++20 output\advanced_macro.i -o output\advanced_macro.exe
 .\output\std-demo.exe
 ```
 
-`std-demo` 使用 `<iostream>`/`<vector>`/`<string>`/`<algorithm>`，已经过本工具预处理并由 GCC 编译。
+`std-demo` 的源文件是 `examples/std_demo.cpp`，使用 `<iostream>`/`<vector>`/`<string>`/`<algorithm>`，已经过本工具预处理并由 GCC 编译。
 
 ## 处理自己的项目头（引号或尖括号）
 
@@ -50,22 +50,25 @@ g++ -std=c++20 output\advanced_macro.i -o output\advanced_macro.exe
 
 ## 处理标准库头
 
-标准库路径不自动探测。建议用 CMake 把 `CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES` 传进来；命令行则手动传：
+现在会自动从 `PATH` 找 GCC，并读取它的 include 搜索路径。直接这样即可：
 
 ```powershell
-.\build\cruciblecpp-preprocessor.exe `
-    -P `
-    -isystem D:/vsC++/ucrt64/include/c++/15.2.0 `
-    -isystem D:/vsC++/ucrt64/include/c++/15.2.0/x86_64-w64-mingw32 `
-    -isystem D:/vsC++/ucrt64/include/c++/15.2.0/backward `
-    -isystem D:/vsC++/ucrt64/lib/gcc/x86_64-w64-mingw32/15.2.0/include `
-    -isystem D:/vsC++/ucrt64/include `
-    -isystem D:/vsC++/ucrt64/lib/gcc/x86_64-w64-mingw32/15.2.0/include-fixed `
-    -o output\std.i `
-    your_std_file.cpp
+.\build\cruciblecpp-preprocessor.exe -P -o output\std.i your_std_file.cpp
 ```
 
-CMake 集成示例见 `README.md` 的 “CMake 依赖图集成”。
+查看找到的目录：
+
+```powershell
+.\build\cruciblecpp-preprocessor.exe --print-gcc-includes
+```
+
+关闭自动发现：
+
+```powershell
+.\build\cruciblecpp-preprocessor.exe -nostdinc -P -o output\std.i your_std_file.cpp
+```
+
+如果 `PATH` 里没有 GCC，可以手动传 `-isystem`；CMake 集成示例见 `README.md` 的 “CMake 依赖图集成”。
 
 ## CMake 依赖文件
 
@@ -83,7 +86,7 @@ CMake 集成示例见 `README.md` 的 “CMake 依赖图集成”。
 ## 重要限制
 
 - 只兼容 **Windows x64 + MinGW-w64 UCRT64 + GCC 15.2.0 + C++20**。
-- 不自动搜索 sysroot/系统头；路径由用户或 CMake 显式提供。
+- 需要 `PATH` 中能找到 GCC；找不到时需手动传 `-isystem`。
 - 硬编码 GCC 15.2 profile；换 GCC 版本、MSVCRT、32 位或 C++ 标准需要重新生成/调整 profile。
 - 尖括号 header name 支持 `/` 和直接反斜杠路径；注释夹在 `#include` 与 header name 之间属于边界情况。
 - 当前未实现 PCH、modules、`#embed`。

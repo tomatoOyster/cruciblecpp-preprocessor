@@ -2,6 +2,7 @@
 
 #include "ConditionalEngine.h"
 #include "FileReader.h"
+#include "GccDiscovery.h"
 #include "IncludeHandler.h"
 #include "MacroExpander.h"
 #include "MacroRegistry.h"
@@ -507,6 +508,55 @@ Preprocessor::Preprocessor(PreprocessorOptions options)
       special_(std::make_unique<SpecialOperator>(diagnostics_)),
       writer_(std::make_unique<OutputWriter>(options_.lineMarkers)) {
     diagnostics_.setWarningsAsErrors(options_.warningsAsErrors);
+
+    if (options_.autoGccIncludes) {
+        const GccDiscovery discovery = discoverGccFromPath();
+        if (discovery.found) {
+            if (options_.verbose) {
+                std::cerr << "cruciblecpp: GCC";
+                if (!discovery.version.empty()) {
+                    std::cerr << ' ' << discovery.version;
+                }
+                std::cerr << " at " << pathToUtf8(discovery.compiler)
+                          << '\n';
+            }
+            for (const auto& dir : discovery.includeDirs) {
+                if (options_.verbose) {
+                    std::cerr << "cruciblecpp: include " << pathToUtf8(dir)
+                              << '\n';
+                }
+                options_.systemDirs.push_back(dir);
+            }
+            if (!discovery.error.empty() && options_.verbose) {
+                std::cerr << "cruciblecpp: GCC discovery: "
+                          << discovery.error << '\n';
+            }
+        } else if (options_.verbose) {
+            std::cerr << "cruciblecpp: GCC discovery failed: "
+                      << discovery.error << '\n';
+        }
+
+        // Preserve explicit -isystem order and remove duplicates introduced by
+        // GCC's search list or by overlapping explicit directories.
+        std::vector<std::filesystem::path> merged;
+        std::unordered_set<std::string> seen;
+        for (const auto& dir : options_.systemDirs) {
+            std::string key = pathToUtf8(dir.lexically_normal());
+#ifdef _WIN32
+            std::transform(key.begin(), key.end(), key.begin(),
+                           [](unsigned char c) {
+                               return static_cast<char>(std::tolower(c));
+                           });
+#endif
+            if (seen.insert(key).second) {
+                merged.push_back(dir);
+            }
+        }
+        options_.systemDirs = std::move(merged);
+        includes_ = std::make_unique<IncludeHandler>(options_.includeDirs,
+                                                     options_.systemDirs);
+    }
+
     expander_ = std::make_unique<MacroExpander>(*macros_, diagnostics_,
                                                 *special_);
     expander_->setBuiltinHandler([this](const Token& token)

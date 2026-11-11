@@ -1,6 +1,8 @@
 # Windows UCRT64 GCC 15.2 预处理器：目标、现状与剩余差距
 
 > 当前工程：[cruciblecpp-preprocessor/](cruciblecpp-preprocessor/)  
+> 当前版本：**V2.0.0**
+>
 > 兼容矩阵：**Windows x64 + MinGW-w64 UCRT64 + GCC 15.2.0 + C++20**
 
 ---
@@ -10,7 +12,7 @@
 做一个在 Windows 上替代 `g++ -E` 的独立预处理器：
 
 - 支持 `#include "..."` 和 `#include <...>`；
-- 不自动探测 sysroot，头文件路径由用户或 CMake 显式提供；
+- 从 `PATH` 查找 GCC 并自动读取其隐式 include 搜索列表；用户或 CMake 仍可显式传 `-I` / `-isystem`；
 - 兼容 GCC 15.2 的预定义宏、pragmas、`__has_*`；
 - 输出 GCC 可直接编译的 `.i`；
 - 接入 CMake/Ninja 的 depfile；
@@ -23,7 +25,7 @@
 - MSVCRT 版 MinGW、32 位 GCC；
 - 其他 GCC 小版本；
 - PCH、modules、`#embed`；
-- 自动 sysroot / 自动系统头搜索。
+- 任意 sysroot；自动发现只针对 `PATH` 里的 GCC。
 
 ---
 
@@ -32,7 +34,7 @@
 | 维度 | 当前状态 | 判断 |
 |---|---|---|
 | `""` / `<>` include | 都已支持；`<>` 不查当前目录 | 90% |
-| 搜索路径 | `-I` / `-isystem`，CMake 可传隐式目录 | 90% |
+| 搜索路径 | `-I` / `-isystem` + PATH 中 GCC 自动发现 | 95% |
 | GCC 15.2 预定义宏 | 硬编码 profile | 90% |
 | `__has_include` | quote/angle 都支持；宏展开后二次处理 | 90% |
 | `__has_builtin` / `__has_attribute` | 常用集合 | 70% |
@@ -46,7 +48,7 @@
 | fuzz / 资源上限 / 安全 | 基础限制，无 fuzz | 30% |
 | CI / 发布 / 许可证 | 未完成 | 20% |
 
-综合：**约 78%–82%** 完成“Windows UCRT64 GCC 15.2 受控项目”的生产目标。
+综合：**约 85%** 完成“Windows UCRT64 GCC 15.2 受控项目”的生产目标。
 
 ---
 
@@ -54,8 +56,8 @@
 
 ### 2.1 include
 
-- `#include "x.h"`：当前文件目录 → `-I` → `-isystem`；
-- `#include <x.h>`：`-I` → `-isystem`，不查当前目录；
+- `#include "x.h"`：当前文件目录 → `-I` → `-isystem` → PATH 中 GCC 的 include 目录；
+- `#include <x.h>`：`-I` → `-isystem` → PATH 中 GCC 的 include 目录，不查当前目录；
 - 宏展开成 quote/angle 都支持；
 - `#include_next`；
 - `__has_include` / `__has_include_next`；
@@ -100,7 +102,7 @@
 - 路径去重、空格/# 转义；
 - 目标路径统一 `/`；
 - 已用 CMake + Ninja `add_custom_command(DEPFILE ...)` 实测增量构建；
-- CMake 通过 `CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES` 把 GCC 头路径作为 `-isystem` 显式传入。
+- CMake 仍可把 `CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES` 作为 `-isystem` 显式传入；不传时自动发现。
 
 ### 2.6 输出
 
@@ -244,7 +246,8 @@
 
 ## 6. 验收清单
 
-- [x] `#include <...>` 可用。
+- [x] `#include <...>` 可用，且无需手动 `-isystem`。
+- [x] 从 PATH 自动发现 GCC include 目录。
 - [x] `#include "..."` 可用。
 - [x] `<>` 不搜索当前目录。
 - [x] `__has_include(<...>)` 可用。
@@ -268,7 +271,8 @@
 
 - 标准库头可以预处理并编译；
 - `<>` 搜索、`__has_*`、system_header、depfile 都已打通；
-- 31 个 CTest 通过；
-- CMake + Ninja 的标准头项目实测通过。
+- 34 个 CTest 通过；
+- CMake + Ninja 的标准头项目实测通过；
+- 不传 `-isystem` 的自动发现标准头测试通过。
 
 下一步最有价值的是：**真实项目 corpus + pragma/`__has_*` 长尾 + fuzz/资源/CI**。
