@@ -1,0 +1,8 @@
+{
+  "cruciblecpp.includeDirs": [
+    "include",
+    "tests"
+  ],
+  "cruciblecpp.standard": "c++20",
+  "cruciblecpp.useCompileCommands": false
+}

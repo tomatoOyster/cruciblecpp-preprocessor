@@ -2,7 +2,10 @@
 #include "GccDiscovery.h"
 #include "Preprocessor.h"
 
+#include <algorithm>
+#include <chrono>
 #include <cstdlib>
+#include <ctime>
 #include <filesystem>
 #include <iostream>
 #include <string>
@@ -68,6 +71,43 @@ std::vector<std::string> collectArguments(int argc, char** argv) {
     return result;
 }
 
+int daysUntilNewYear() {
+    int yearValue = 0;
+    unsigned monthValue = 0;
+    unsigned dayValue = 0;
+#ifdef _WIN32
+    SYSTEMTIME local{};
+    GetLocalTime(&local);
+    yearValue = local.wYear;
+    monthValue = local.wMonth;
+    dayValue = local.wDay;
+#else
+    const std::time_t now = std::time(nullptr);
+    std::tm local{};
+#ifdef _POSIX_VERSION
+    localtime_r(&now, &local);
+#else
+    local = *std::localtime(&now);
+#endif
+    yearValue = local.tm_year + 1900;
+    monthValue = static_cast<unsigned>(local.tm_mon + 1);
+    dayValue = static_cast<unsigned>(local.tm_mday);
+#endif
+
+    using namespace std::chrono;
+    const year_month_day today{
+        year{yearValue}, month{monthValue}, day{dayValue}};
+    if (!today.ok()) {
+        return 0;
+    }
+    if (today.month() == January && today.day() == day{1}) {
+        return 0;
+    }
+    const year_month_day nextNewYear{
+        year{yearValue + 1}, January, day{1}};
+    return static_cast<int>((sys_days{nextNewYear} - sys_days{today}).count());
+}
+
 void printUsage(std::ostream& out) {
     out << "Usage: cruciblecpp-preprocessor [options] <input.cpp...>\n"
            "\n"
@@ -88,6 +128,7 @@ void printUsage(std::ostream& out) {
            "  -fexec-charset=<name>        Execution charset for char constants (default: UTF-8)\n"
            "  -funsigned-char              Treat plain char as unsigned\n"
            "  -fsigned-char                Treat plain char as signed (default)\n"
+           "  --analysis-json <file>       Write include edges and macro trace JSON\n"
            "  -MD, -MMD                    Generate a CMake/Ninja depfile\n"
            "  -MF <file>                   Dependency file path\n"
            "  -MT <target>                 Dependency target\n"
@@ -100,6 +141,7 @@ void printUsage(std::ostream& out) {
            "  --max-errors <n>             Stop after n errors (default: 20)\n"
            "  --max-include-depth <n>      Include nesting limit (default: 200)\n"
            "  -v, --verbose                Print processing information\n"
+           "  -newyear                     Print days until next January 1 and exit\n"
            "  --help                       Show this help\n"
            "  --version                    Show version\n";
 }
@@ -126,6 +168,14 @@ int main(int argc, char** argv) {
     std::vector<std::filesystem::path> outputs;
     const std::vector<std::string> arguments = collectArguments(argc, argv);
 
+    // This is intentionally handled before all other arguments: when
+    // -newyear is present, every other option/file is ignored.
+    if (std::find(arguments.begin() + 1, arguments.end(), "-newyear") !=
+        arguments.end()) {
+        std::cout << daysUntilNewYear() << '\n';
+        return 0;
+    }
+
     for (std::size_t i = 1; i < arguments.size(); ++i) {
         const std::string arg = arguments[i];
         auto nextValue = [&](const char* option) -> std::string {
@@ -141,7 +191,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (arg == "--version") {
-            std::cout << "cruciblecpp-preprocessor 2.1.0\n";
+            std::cout << "cruciblecpp-preprocessor 2.2.0\n";
             return 0;
         }
         if (arg == "-o" || arg == "--output") {
@@ -211,6 +261,10 @@ int main(int argc, char** argv) {
         }
         if (arg == "-MD" || arg == "-MMD") {
             options.generateDependencies = true;
+            continue;
+        }
+        if (arg == "--analysis-json") {
+            options.analysisFile = pathFromUtf8(nextValue(arg.c_str()));
             continue;
         }
         if (arg == "-MF") {

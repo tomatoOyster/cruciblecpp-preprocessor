@@ -1,5 +1,6 @@
 #pragma once
 
+#include "MacroExpander.h"
 #include "Token.h"
 
 #include <cstdint>
@@ -7,6 +8,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -99,6 +101,9 @@ struct PreprocessorOptions {
     std::string inputCharset = "UTF-8";
     std::string executionCharset = "UTF-8";
     bool unsignedChar = false;
+
+    // Optional JSON analysis output for GUI/front-end tooling.
+    std::filesystem::path analysisFile;
 };
 
 class Preprocessor {
@@ -137,6 +142,7 @@ private:
 
     bool writeOutput();
     bool writeDependencies();
+    bool writeAnalysis();
     void recordDependency(const std::filesystem::path& path);
     std::shared_ptr<SourceFile> makeSyntheticFile(
         std::string_view text, std::string_view displayName);
@@ -162,6 +168,37 @@ private:
     int filesProcessed_ = 0;
     std::vector<std::filesystem::path> dependencies_;
     std::unordered_set<std::string> dependencyKeys_;
+
+    struct IncludeEdge {
+        std::string from;
+        std::string to;
+        int line = 0;
+        bool angled = false;
+    };
+    struct MacroTrace {
+        int id = 0;
+        int parentId = -1;
+        std::string macro;
+        std::string kind;
+        std::string file;
+        int line = 0;
+        int column = 0;
+        int offset = 0;
+        int length = 0;
+        int depth = 0;
+        std::string invocation;
+        std::string sourceLine;
+        std::string definitionFile;
+        int definitionLine = 0;
+        int definitionColumn = 0;
+        std::string definitionText;
+        std::string replacement;
+        std::vector<MacroTraceArgument> arguments;
+        std::vector<MacroTraceStep> steps;
+    };
+    std::vector<IncludeEdge> includeEdges_;
+    std::vector<MacroTrace> macroTrace_;
+    std::unordered_map<int, std::size_t> macroTraceIndex_;
 };
 
 } // namespace crucible

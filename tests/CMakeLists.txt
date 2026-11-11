@@ -37,6 +37,14 @@ add_compile_case(charset_exec_gbk test_charset_exec_gbk.cpp
                  -fexec-charset=GBK)
 add_compile_case(charset_unsigned test_charset_unsigned.cpp
                  -funsigned-char)
+
+# -newyear prints one integer and ignores every other argument.
+add_test(NAME newyear COMMAND ${PREPROCESSOR} -newyear)
+set_tests_properties(newyear PROPERTIES PASS_REGULAR_EXPRESSION "^[0-9]+")
+add_test(NAME newyear_ignores_arguments
+    COMMAND ${PREPROCESSOR} -newyear --not-an-option missing.cpp -o missing.i)
+set_tests_properties(newyear_ignores_arguments
+    PROPERTIES PASS_REGULAR_EXPRESSION "^[0-9]+")
 add_compile_case(standard_headers test_standard_headers.cpp ${GCC_IMPLICIT_INCLUDE_FLAGS})
 add_compile_case(standard_headers_auto test_standard_headers.cpp)
 add_compile_case(windows_header test_windows_header.cpp ${GCC_IMPLICIT_INCLUDE_FLAGS})

@@ -43,6 +43,43 @@ struct WorkToken {
     bool replacementOperator = false;
 };
 
+std::string joinTokenText(const std::vector<Token>& tokens) {
+    std::string text;
+    for (const auto& token : tokens) {
+        if (token.kind == TokenKind::Placemarker ||
+            token.kind == TokenKind::Newline ||
+            token.kind == TokenKind::Comment || token.text.empty()) {
+            continue;
+        }
+        if (!text.empty()) {
+            text.push_back(' ');
+        }
+        text += token.text;
+        if (text.size() > 2000) {
+            text += " ...";
+            break;
+        }
+    }
+    return text;
+}
+
+std::string sourceLineAt(const SourceLocation& loc) {
+    if (!loc.file || loc.offset >= loc.file->text.size()) {
+        return {};
+    }
+    const std::string& text = loc.file->text;
+    const std::size_t start = text.rfind('\n', loc.offset);
+    const std::size_t begin = start == std::string::npos ? 0 : start + 1;
+    const std::size_t end = text.find('\n', loc.offset);
+    std::string line = text.substr(
+        begin, (end == std::string::npos ? text.size() : end) - begin);
+    if (line.size() > 500) {
+        line.resize(500);
+        line += " ...";
+    }
+    return line;
+}
+
 } // namespace
 
 MacroExpander::MacroExpander(MacroRegistry& registry,
@@ -52,6 +89,82 @@ MacroExpander::MacroExpander(MacroRegistry& registry,
 
 void MacroExpander::setBuiltinHandler(BuiltinHandler handler) {
     builtinHandler_ = std::move(handler);
+}
+
+void MacroExpander::setTraceHandlers(TraceStartHandler start,
+                                      TraceEndHandler end,
+                                      TraceStepHandler step) {
+    traceStart_ = std::move(start);
+    traceEnd_ = std::move(end);
+    traceStep_ = std::move(step);
+}
+
+std::vector<MacroTraceArgument> MacroExpander::traceArguments(
+    const std::vector<Argument>& arguments) const {
+    std::vector<MacroTraceArgument> result;
+    result.reserve(arguments.size());
+    for (const auto& argument : arguments) {
+        MacroTraceArgument trace;
+        trace.raw = joinTokenText(argument.raw);
+        if (argument.expandedReady) {
+            trace.expanded = joinTokenText(argument.expanded);
+        }
+        result.push_back(std::move(trace));
+    }
+    return result;
+}
+
+int MacroExpander::beginTrace(const MacroDefinition& macro,
+                              const Token& invocation,
+                              const std::vector<Argument>& arguments,
+                              std::string invocationText,
+                              std::string sourceLine, int offset, int length,
+                              bool functionLike) {
+    MacroTraceStart info;
+    info.id = nextTraceId_++;
+    info.parentId = traceStack_.empty() ? -1 : traceStack_.back();
+    info.macro = macro.name;
+    info.invocation = invocation.loc;
+    info.definition = macro.definitionLoc;
+    info.invocationText = std::move(invocationText);
+    info.sourceLine =
+        sourceLine.empty() ? sourceLineAt(invocation.loc)
+                           : std::move(sourceLine);
+    info.definitionText = sourceLineAt(macro.definitionLoc);
+    info.offset = offset;
+    info.length = length;
+    info.depth = expansionDepth_;
+    info.functionLike = functionLike;
+    info.arguments = traceArguments(arguments);
+    traceStack_.push_back(info.id);
+    if (traceStart_) {
+        traceStart_(info);
+    }
+    return info.id;
+}
+
+void MacroExpander::endTrace(
+    int id, const std::vector<Token>& replacement,
+    const std::vector<Argument>& arguments) {
+    if (traceEnd_) {
+        traceEnd_(id, replacement, traceArguments(arguments));
+    }
+    if (!traceStack_.empty() && traceStack_.back() == id) {
+        traceStack_.pop_back();
+    }
+}
+
+void MacroExpander::traceStep(std::string operation, std::string before,
+                              std::string after) {
+    if (!traceStep_ || traceStack_.empty()) {
+        return;
+    }
+    MacroTraceStep step;
+    step.parentId = traceStack_.back();
+    step.operation = std::move(operation);
+    step.before = std::move(before);
+    step.after = std::move(after);
+    traceStep_(step);
 }
 
 bool MacroExpander::collectArguments(
@@ -148,7 +261,8 @@ std::vector<Token> MacroExpander::substituteObject(
 
 std::vector<Token> MacroExpander::substituteFunction(
     const MacroDefinition& macro, const Token& invocation,
-    const std::vector<Argument>& inputArguments) {
+    std::vector<Argument>& traceArguments) {
+    const std::vector<Argument>& inputArguments = traceArguments;
     const std::size_t fixedCount = macro.params.size();
     std::vector<Argument> arguments;
 
@@ -248,6 +362,7 @@ std::vector<Token> MacroExpander::substituteFunction(
         }
     }
 
+    traceArguments = arguments;
     return processReplacement(macro, invocation, arguments);
 }
 
@@ -352,6 +467,8 @@ std::vector<Token> MacroExpander::processReplacement(
                 if (argument) {
                     Token stringized =
                         special_.stringize(argument->raw, token.loc);
+                    traceStep("stringize", joinTokenText(argument->raw),
+                              stringized.text);
                     substituted.push_back({std::move(stringized), false});
                     ++i;
                     continue;
@@ -376,9 +493,14 @@ std::vector<Token> MacroExpander::processReplacement(
                              token.text == macro.variadicName)
                                 ? macro.variadicName
                                 : std::string();
+                        traceStep("argument", token.text + " = ", "(empty)");
                         substituted.push_back(
                             {makePlacemarker(token.loc, marker), false});
                     } else {
+                        traceStep("argument",
+                                  token.text + " = " +
+                                      joinTokenText(argument->raw),
+                                  joinTokenText(argument->raw));
                         for (const auto& argumentToken : argument->raw) {
                             substituted.push_back({argumentToken, false});
                         }
@@ -387,6 +509,10 @@ std::vector<Token> MacroExpander::processReplacement(
                     const std::vector<Token>& expanded =
                         argument->expandedReady ? argument->expanded
                                                 : argument->raw;
+                    traceStep("argument",
+                              token.text + " = " +
+                                  joinTokenText(argument->raw),
+                              joinTokenText(expanded));
                     for (const auto& argumentToken : expanded) {
                         substituted.push_back({argumentToken, false});
                     }
@@ -421,12 +547,17 @@ std::vector<Token> MacroExpander::processReplacement(
             if (right.token.kind == TokenKind::Placemarker) {
                 continue;
             }
+            const std::string pasteBefore =
+                left.token.text + " ## " + right.token.text;
             std::optional<Token> pasted =
                 special_.paste(left.token, right.token, left.token.loc);
             if (pasted.has_value()) {
                 left.token = std::move(*pasted);
                 left.replacementOperator = false;
+                traceStep("paste", pasteBefore, left.token.text);
             } else {
+                traceStep("paste", pasteBefore,
+                          left.token.text + right.token.text);
                 combined.push_back(std::move(right));
             }
             continue;
@@ -524,7 +655,11 @@ std::vector<Token> MacroExpander::expand(const std::vector<Token>& input) {
         }
 
         if (!macro->functionLike) {
+            const int traceId = beginTrace(
+                *macro, token, {}, token.text, {}, static_cast<int>(token.loc.offset),
+                static_cast<int>(token.text.size()), false);
             std::vector<Token> replacement = substituteObject(*macro, token);
+            endTrace(traceId, replacement, {});
             in.insert(in.begin(), std::make_move_iterator(replacement.begin()),
                       std::make_move_iterator(replacement.end()));
             continue;
@@ -549,8 +684,23 @@ std::vector<Token> MacroExpander::expand(const std::vector<Token>& input) {
             continue;
         }
 
+        std::string invocationText = token.text;
+        int invocationLength = static_cast<int>(token.text.size());
+        if (token.loc.file && closeIndex < in.size()) {
+            const Token& close = in[closeIndex];
+            const std::size_t start = token.loc.offset;
+            const std::size_t end = close.loc.offset + close.text.size();
+            if (end > start && end <= token.loc.file->text.size()) {
+                invocationText = token.loc.file->text.substr(start, end - start);
+                invocationLength = static_cast<int>(end - start);
+            }
+        }
+        const int traceId = beginTrace(
+            *macro, token, arguments, std::move(invocationText), {},
+            static_cast<int>(token.loc.offset), invocationLength, true);
         std::vector<Token> replacement =
             substituteFunction(*macro, token, arguments);
+        endTrace(traceId, replacement, arguments);
         in.erase(in.begin(),
                  in.begin() + static_cast<std::ptrdiff_t>(closeIndex + 1));
         in.insert(in.begin(), std::make_move_iterator(replacement.begin()),

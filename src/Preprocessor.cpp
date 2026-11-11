@@ -48,6 +48,68 @@ std::string pathToUtf8(const std::filesystem::path& path) {
                        value.size());
 }
 
+std::string joinTokenText(const std::vector<Token>& tokens) {
+    std::string text;
+    for (const auto& token : tokens) {
+        if (token.kind == TokenKind::Placemarker ||
+            token.kind == TokenKind::Newline ||
+            token.kind == TokenKind::Comment || token.text.empty()) {
+            continue;
+        }
+        if (!text.empty()) {
+            text.push_back(' ');
+        }
+        text += token.text;
+        if (text.size() > 2000) {
+            text += " ...";
+            break;
+        }
+    }
+    return text;
+}
+
+std::string jsonEscape(std::string_view text) {
+    std::string result;
+    result.reserve(text.size() + 8);
+    for (const char ch : text) {
+        const unsigned char c = static_cast<unsigned char>(ch);
+        switch (c) {
+        case '"':
+            result += "\\\"";
+            break;
+        case '\\':
+            result += "\\\\";
+            break;
+        case '\b':
+            result += "\\b";
+            break;
+        case '\f':
+            result += "\\f";
+            break;
+        case '\n':
+            result += "\\n";
+            break;
+        case '\r':
+            result += "\\r";
+            break;
+        case '\t':
+            result += "\\t";
+            break;
+        default:
+            if (c < 0x20) {
+                const char hex[] = "0123456789abcdef";
+                result += "\\u00";
+                result.push_back(hex[(c >> 4) & 0xF]);
+                result.push_back(hex[c & 0xF]);
+            } else {
+                result.push_back(ch);
+            }
+            break;
+        }
+    }
+    return result;
+}
+
 bool isDirectiveLine(const std::vector<Token>& line) {
     for (const auto& token : line) {
         if (token.kind == TokenKind::Comment) {
@@ -570,6 +632,77 @@ Preprocessor::Preprocessor(PreprocessorOptions options)
         context.counter = &counter_;
         return special_->expandBuiltin(token, context);
     });
+
+    expander_->setTraceHandlers(
+        [this](const MacroTraceStart& info) {
+            if (options_.analysisFile.empty()) {
+                return;
+            }
+            const auto normalized = [](std::string value) {
+#ifdef _WIN32
+                std::transform(value.begin(), value.end(), value.begin(),
+                               [](unsigned char c) {
+                                   return static_cast<char>(std::tolower(c));
+                               });
+#endif
+                std::replace(value.begin(), value.end(), '\\', '/');
+                return value;
+            };
+            const bool rootInvocation =
+                info.invocation.file &&
+                normalized(info.invocation.file->displayPath) ==
+                    normalized(pathToUtf8(options_.input));
+            // Keep the 5000-event budget for system headers, but always retain
+            // events from the source file being previewed so macro animations
+            // are not drowned out by libstdc++ setup.
+            if (!rootInvocation && macroTrace_.size() >= 5000) {
+                return;
+            }
+            if (macroTrace_.size() >= 20000) {
+                return;
+            }
+            MacroTrace trace;
+            trace.id = info.id;
+            trace.parentId = info.parentId;
+            trace.macro = info.macro;
+            trace.kind = info.functionLike ? "function" : "object";
+            trace.file = info.invocation.file
+                             ? info.invocation.file->displayPath
+                             : currentPresumedFile_;
+            trace.line = static_cast<int>(info.invocation.line);
+            trace.column = static_cast<int>(info.invocation.column);
+            trace.offset = info.offset;
+            trace.length = info.length;
+            trace.depth = info.depth;
+            trace.invocation = info.invocationText;
+            trace.sourceLine = info.sourceLine;
+            trace.definitionFile = info.definition.file
+                                       ? info.definition.file->displayPath
+                                       : std::string("<command line>");
+            trace.definitionLine = static_cast<int>(info.definition.line);
+            trace.definitionColumn = static_cast<int>(info.definition.column);
+            trace.definitionText = info.definitionText;
+            trace.arguments = info.arguments;
+            macroTraceIndex_[trace.id] = macroTrace_.size();
+            macroTrace_.push_back(std::move(trace));
+        },
+        [this](int id, const std::vector<Token>& replacement,
+               const std::vector<MacroTraceArgument>& arguments) {
+            const auto found = macroTraceIndex_.find(id);
+            if (found == macroTraceIndex_.end()) {
+                return;
+            }
+            auto& trace = macroTrace_[found->second];
+            trace.replacement = joinTokenText(replacement);
+            trace.arguments = arguments;
+        },
+        [this](const MacroTraceStep& step) {
+            const auto found = macroTraceIndex_.find(step.parentId);
+            if (found == macroTraceIndex_.end()) {
+                return;
+            }
+            macroTrace_[found->second].steps.push_back(step);
+        });
 }
 
 Preprocessor::~Preprocessor() = default;
@@ -783,6 +916,9 @@ int Preprocessor::run() {
     }
     const bool wrote = writeOutput();
     if (!wrote) {
+        return 2;
+    }
+    if (!writeAnalysis()) {
         return 2;
     }
     if (options_.verbose) {
@@ -1446,6 +1582,15 @@ bool Preprocessor::processInclude(const std::vector<Token>& line,
         return false;
     }
 
+    if (!options_.analysisFile.empty() && includeEdges_.size() < 10000) {
+        IncludeEdge edge;
+        edge.from = currentFile_ ? currentFile_->displayPath : baseFile_;
+        edge.to = pathToUtf8(*resolved);
+        edge.line = static_cast<int>(loc.line);
+        edge.angled = angled;
+        includeEdges_.push_back(std::move(edge));
+    }
+
     const int returnLine =
         static_cast<int>(line.back().loc.line) + 1;
     const bool ok = processFile(*resolved, angled);
@@ -1761,6 +1906,105 @@ bool Preprocessor::evaluateCondition(const std::vector<Token>& expression,
     return ConditionalEngine::evaluateExpression(expressionTokens, loc,
                                                   diagnostics_,
                                                   characterOptions);
+}
+
+bool Preprocessor::writeAnalysis() {
+    if (options_.analysisFile.empty()) {
+        return true;
+    }
+
+    std::error_code ec;
+    const auto parent = options_.analysisFile.parent_path();
+    if (!parent.empty()) {
+        std::filesystem::create_directories(parent, ec);
+    }
+    std::ofstream out(options_.analysisFile, std::ios::binary);
+    if (!out) {
+        diagnostics_.error({}, "cannot write analysis file '" +
+                                   pathToUtf8(options_.analysisFile) + "'");
+        return false;
+    }
+
+    std::vector<std::string> files;
+    std::unordered_set<std::string> seen;
+    auto addFile = [&](const std::string& file) {
+        if (!file.empty() && seen.insert(file).second) {
+            files.push_back(file);
+        }
+    };
+    addFile(baseFile_);
+    for (const auto& edge : includeEdges_) {
+        addFile(edge.from);
+        addFile(edge.to);
+    }
+
+    out << "{\"version\":1,\"root\":\"" << jsonEscape(baseFile_)
+        << "\",\"files\":[";
+    for (std::size_t i = 0; i < files.size(); ++i) {
+        if (i) {
+            out << ',';
+        }
+        out << '"' << jsonEscape(files[i]) << '"';
+    }
+    out << "],\"includes\":[";
+    for (std::size_t i = 0; i < includeEdges_.size(); ++i) {
+        if (i) {
+            out << ',';
+        }
+        const auto& edge = includeEdges_[i];
+        out << "{\"from\":\"" << jsonEscape(edge.from) << "\",\"to\":\""
+            << jsonEscape(edge.to) << "\",\"line\":" << edge.line
+            << ",\"angled\":" << (edge.angled ? "true" : "false") << '}';
+    }
+    out << "],\"macros\":[";
+    for (std::size_t i = 0; i < macroTrace_.size(); ++i) {
+        if (i) {
+            out << ',';
+        }
+        const auto& trace = macroTrace_[i];
+        out << "{\"id\":" << trace.id << ",\"parentId\":"
+            << trace.parentId << ",\"macro\":\""
+            << jsonEscape(trace.macro) << "\",\"kind\":\""
+            << jsonEscape(trace.kind) << "\",\"file\":\""
+            << jsonEscape(trace.file) << "\",\"line\":" << trace.line
+            << ",\"column\":" << trace.column << ",\"offset\":"
+            << trace.offset << ",\"length\":" << trace.length
+            << ",\"depth\":" << trace.depth << ",\"invocation\":\""
+            << jsonEscape(trace.invocation) << "\",\"sourceLine\":\""
+            << jsonEscape(trace.sourceLine) << "\",\"definitionFile\":\""
+            << jsonEscape(trace.definitionFile) << "\",\"definitionLine\":"
+            << trace.definitionLine << ",\"definitionColumn\":"
+            << trace.definitionColumn << ",\"definitionText\":\""
+            << jsonEscape(trace.definitionText) << "\",\"replacement\":\""
+            << jsonEscape(trace.replacement) << "\",\"arguments\":[";
+        for (std::size_t a = 0; a < trace.arguments.size(); ++a) {
+            if (a) {
+                out << ',';
+            }
+            out << "{\"raw\":\"" << jsonEscape(trace.arguments[a].raw)
+                << "\",\"expanded\":\""
+                << jsonEscape(trace.arguments[a].expanded) << "\"}";
+        }
+        out << "],\"steps\":[";
+        for (std::size_t s = 0; s < trace.steps.size(); ++s) {
+            if (s) {
+                out << ',';
+            }
+            out << "{\"operation\":\""
+                << jsonEscape(trace.steps[s].operation)
+                << "\",\"before\":\""
+                << jsonEscape(trace.steps[s].before) << "\",\"after\":\""
+                << jsonEscape(trace.steps[s].after) << "\"}";
+        }
+        out << "]}";
+    }
+    out << "]}";
+    if (!out.good()) {
+        diagnostics_.error({}, "failed while writing analysis file '" +
+                                   pathToUtf8(options_.analysisFile) + "'");
+        return false;
+    }
+    return true;
 }
 
 void Preprocessor::recordDependency(const std::filesystem::path& path) {

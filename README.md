@@ -1,8 +1,8 @@
 # CrucibleCpp Preprocessor
 
-> **V2.1.0** — Windows x64 独立 C++ 预处理器，自动发现 PATH 中的 GCC 头文件目录，直接替代 `g++ -E` 的预处理步骤。
+> **V2.2.0** — Windows x64 独立 C++ 预处理器，自动发现 PATH 中的 GCC 头文件目录，直接替代 `g++ -E` 的预处理步骤。
 >
-> [下载 V2.1.0](https://github.com/tomatoOyster/cruciblecpp-preprocessor/releases/latest) · [Release Notes](RELEASE_NOTES_v2.1.0.md)
+> [下载 V2.2.0](https://github.com/tomatoOyster/cruciblecpp-preprocessor/releases/latest) · [Changelog](CHANGELOG.md)
 
 一个用 C++20 实现的独立 C++ 预处理器，兼容矩阵锁定为：
 
@@ -18,9 +18,10 @@
 - 功能：预处理当前文件、只读 `.i` 预览、Problems 诊断、保存 `.i`、与 `g++ -E` diff、读取 `compile_commands.json`、查看 GCC include 路径。
 - 安装：从 Release 下载 `.vsix` 后执行
   ```powershell
-  code --install-extension path\to\cruciblecpp-vscode-0.1.0.vsix
+  code --install-extension path\to\cruciblecpp-vscode-0.4.1.vsix
   ```
 - 插件需要本仓库构建的 `cruciblecpp-preprocessor.exe`；如果不在工作区 `build`/`bin` 中，在 VS Code 设置里配置 `cruciblecpp.executable`。
+- 宏动画和 include 图需要 CrucibleCpp **2.2.0** 或更新版本。
 
 **范围声明：**
 
@@ -263,6 +264,7 @@ g++ -std=c++20 -fsyntax-only output\hello.i
 -fexec-charset=<name>        执行字符集，影响 #if 字符常量（默认 UTF-8）
 -funsigned-char              普通 char 按无符号处理
 -fsigned-char                普通 char 按有符号处理（默认）
+--analysis-json <file>       输出 include 边和宏展开 trace 的 JSON
 -MD, -MMD                    生成 CMake/Ninja depfile
 -MF <file>                   依赖文件路径
 -MT <target>                 依赖目标
@@ -275,6 +277,7 @@ g++ -std=c++20 -fsyntax-only output\hello.i
 --max-errors <n>             最大错误数（默认 20）
 --max-include-depth <n>      include 最大深度（默认 200）
 -v, --verbose                输出处理统计
+-newyear                     输出距离下一个 1 月 1 日的天数并退出
 --help                       帮助
 --version                    版本
 ```
@@ -435,7 +438,7 @@ CAT(, x)                  // x
 
 ## 测试
 
-当前包含 **51 个 CTest 用例**（正例会预处理后再用 GCC 编译，负例验证退出码）。
+当前包含 **53 个 CTest 用例**（正例会预处理后再用 GCC 编译，负例验证退出码）。
 
 测试覆盖：
 
