@@ -29,11 +29,38 @@ add_compile_case(conditional test_conditional.cpp)
 add_compile_case(include test_include/main.h)
 add_compile_case(pound_ops test_pound_ops.cpp)
 add_compile_case(gcc_profile test_gcc_profile.cpp)
+add_compile_case(character_constants test_character_constants.cpp)
+add_compile_case(charset_latin1 test_charset_latin1.cpp
+                 -finput-charset=ISO-8859-1)
+add_compile_case(charset_gbk test_charset_gbk.cpp -finput-charset=GBK)
+add_compile_case(charset_exec_gbk test_charset_exec_gbk.cpp
+                 -fexec-charset=GBK)
+add_compile_case(charset_unsigned test_charset_unsigned.cpp
+                 -funsigned-char)
 add_compile_case(standard_headers test_standard_headers.cpp ${GCC_IMPLICIT_INCLUDE_FLAGS})
 add_compile_case(standard_headers_auto test_standard_headers.cpp)
 add_compile_case(windows_header test_windows_header.cpp ${GCC_IMPLICIT_INCLUDE_FLAGS})
 add_compile_case(angle_header_name test_angle_header_name.cpp
                  -I ${CMAKE_CURRENT_SOURCE_DIR})
+
+# Verify multiple inputs and matching outputs.
+set(MULTI_A ${CMAKE_CURRENT_BINARY_DIR}/multi_a.i)
+set(MULTI_B ${CMAKE_CURRENT_BINARY_DIR}/multi_b.i)
+set(MULTI_C ${CMAKE_CURRENT_BINARY_DIR}/multi_c.i)
+add_test(NAME preprocess_multi
+    COMMAND ${PREPROCESSOR} -P
+            ${CMAKE_CURRENT_SOURCE_DIR}/test_simple.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/test_function_macro.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/test_conditional.cpp
+            -o ${MULTI_A} ${MULTI_B} ${MULTI_C})
+add_test(NAME compile_multi_a
+    COMMAND ${CMAKE_CXX_COMPILER} ${TEST_COMPILE_FLAGS} ${MULTI_A})
+add_test(NAME compile_multi_b
+    COMMAND ${CMAKE_CXX_COMPILER} ${TEST_COMPILE_FLAGS} ${MULTI_B})
+add_test(NAME compile_multi_c
+    COMMAND ${CMAKE_CXX_COMPILER} ${TEST_COMPILE_FLAGS} ${MULTI_C})
+set_tests_properties(compile_multi_a compile_multi_b compile_multi_c
+    PROPERTIES DEPENDS preprocess_multi)
 
 # Verify CMake/Ninja depfile generation for quoted and angled includes.
 set(DEPFILE_OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/depfile.d)
@@ -86,3 +113,6 @@ add_negative_case(error_directive error_directive.cpp)
 add_negative_case(unterminated_string unterminated_string.cpp)
 add_negative_case(missing_angle_include missing_angle_include.cpp)
 add_negative_case(nostdinc_angle nostdinc_angle.cpp -nostdinc)
+add_negative_case(wide_non_bmp wide_non_bmp.cpp)
+add_negative_case(char16_non_bmp char16_non_bmp.cpp)
+add_negative_case(u8_multibyte u8_multibyte.cpp)

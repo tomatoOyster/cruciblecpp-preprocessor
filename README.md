@@ -1,8 +1,8 @@
 # CrucibleCpp Preprocessor
 
-> **V2.0.0** — Windows x64 独立 C++ 预处理器，自动发现 PATH 中的 GCC 头文件目录，直接替代 `g++ -E` 的预处理步骤。
+> **V2.1.0** — Windows x64 独立 C++ 预处理器，自动发现 PATH 中的 GCC 头文件目录，直接替代 `g++ -E` 的预处理步骤。
 >
-> [Release Notes](RELEASE_NOTES_v2.0.0.md)
+> [下载 V2.1.0](https://github.com/tomatoOyster/cruciblecpp-preprocessor/releases/latest) · [Release Notes](RELEASE_NOTES_v2.1.0.md)
 
 一个用 C++20 实现的独立 C++ 预处理器，兼容矩阵锁定为：
 
@@ -52,7 +52,8 @@
   - `defined`、`__has_include`、`__has_include_next`、`__has_cpp_attribute`；
   - `__has_builtin`、`__has_attribute`、`__has_feature`、`__has_extension`（GCC profile 兼容集合）；
   - 硬编码 GCC 15.2 预定义宏（`__GNUC__`、`_WIN32`、`__x86_64__`、`__SIZEOF_*`、`__cpp_*` 等）；
-  - 整数/字符常量、优先级、短路求值、除零诊断。
+  - 整数常量、优先级、短路求值、除零诊断；
+  - `#if` 字符常量：普通、`L`、`u`、`U`、`u8`，多字符常量、UTF-8 源码字符、`\x`/`\ooo`/UCN；行为对齐 GCC 15.2 / Windows x64。
 - 文件包含：
   - `#include "..."`：当前文件目录 → `-I` / `-isystem`；
   - `#include <...>`：`-I` / `-isystem`，不搜索当前文件目录；
@@ -93,6 +94,7 @@ cruciblecpp-preprocessor/
 ├── include/
 │   ├── Preprocessor.h
 │   ├── Token.h
+│   ├── Charset.h
 │   ├── FileReader.h
 │   ├── GccDiscovery.h
 │   ├── Tokenizer.h
@@ -106,6 +108,7 @@ cruciblecpp-preprocessor/
 │   ├── main.cpp
 │   ├── Preprocessor.cpp
 │   ├── Token.cpp
+│   ├── Charset.cpp
 │   ├── FileReader.cpp
 │   ├── GccDiscovery.cpp
 │   ├── Tokenizer.cpp
@@ -127,6 +130,11 @@ cruciblecpp-preprocessor/
 │   │   └── sub.h
 │   ├── test_pound_ops.cpp
 │   ├── test_gcc_profile.cpp
+│   ├── test_character_constants.cpp
+│   ├── test_charset_latin1.cpp
+│   ├── test_charset_gbk.cpp
+│   ├── test_charset_exec_gbk.cpp
+│   ├── test_charset_unsigned.cpp
 │   ├── test_standard_headers.cpp
 │   ├── test_windows_header.cpp
 │   ├── test_angle_header_name.cpp
@@ -165,7 +173,7 @@ ctest --test-dir build --output-on-failure
 
 ```powershell
 g++ -std=c++20 -Wall -Wextra -Iinclude `
-    src/Token.cpp src/FileReader.cpp src/GccDiscovery.cpp src/Tokenizer.cpp `
+    src/Charset.cpp src/Token.cpp src/FileReader.cpp src/GccDiscovery.cpp src/Tokenizer.cpp `
     src/MacroRegistry.cpp src/MacroExpander.cpp `
     src/ConditionalEngine.cpp src/IncludeHandler.cpp `
     src/SpecialOperator.cpp src/OutputWriter.cpp `
@@ -228,7 +236,7 @@ g++ -std=c++20 -fsyntax-only output\hello.i
 ### 命令行选项
 
 ```text
--o, --output <file>          输出文件；默认 stdout
+-o, --output <file...>       输出文件；单文件可省略，多文件必须按输入顺序给出
 -I, --include-dir <dir>      用户头文件目录（可重复）
 -isystem <dir>               系统头文件目录（可重复；优先于自动发现）
 -nostdinc                    关闭 PATH 中 GCC 的自动 include 发现
@@ -239,6 +247,10 @@ g++ -std=c++20 -fsyntax-only output\hello.i
 -P, --no-line-markers        不输出行标记
 -C, --keep-comments          保留注释
 -std=<c++17|c++20|c++23>     设置 __cplusplus（默认 c++20）
+-finput-charset=<name>       源文件字符集（默认 UTF-8）
+-fexec-charset=<name>        执行字符集，影响 #if 字符常量（默认 UTF-8）
+-funsigned-char              普通 char 按无符号处理
+-fsigned-char                普通 char 按有符号处理（默认）
 -MD, -MMD                    生成 CMake/Ninja depfile
 -MF <file>                   依赖文件路径
 -MT <target>                 依赖目标
@@ -260,6 +272,26 @@ g++ -std=c++20 -fsyntax-only output\hello.i
 ```powershell
 .\build\cruciblecpp-preprocessor.exe -D "F(x)=x+1" input.cpp
 ```
+
+### 多文件
+
+输入在前、输出在后：
+
+```powershell
+.\build\cruciblecpp-preprocessor.exe -P `
+    main.cpp iii.cpp yingt.cpp `
+    -o main.i iii.i yingt.i
+```
+
+或重复 `-o`：
+
+```powershell
+.\build\cruciblecpp-preprocessor.exe -P `
+    main.cpp iii.cpp `
+    -o main.i -o iii.i
+```
+
+输入与输出数量必须一致；`-MD` depfile 目前只支持单输入。
 
 `-D` / `-U` 按出现顺序应用。例如：
 
@@ -391,7 +423,7 @@ CAT(, x)                  // x
 
 ## 测试
 
-当前包含 **34 个 CTest 用例**（正例会预处理后再用 GCC 编译，负例验证退出码）。
+当前包含 **51 个 CTest 用例**（正例会预处理后再用 GCC 编译，负例验证退出码）。
 
 测试覆盖：
 
@@ -402,6 +434,7 @@ CAT(, x)                  // x
 - include 搜索、include guard、`#pragma once`、`__has_include`；
 - 尖括号 `<sub.h>`、Windows 反斜杠/双斜杠 header name、真实 libstdc++ 标准头（`<vector>`/`<string>`/`<iostream>` 等）和 `<windows.h>`；
 - 不传 `-isystem` 的 PATH 自动发现标准头测试；
+- 多文件三输入三输出测试；
 - GCC 15.2 profile、`__has_builtin`/`__has_attribute`；
 - `#line`、`#error`、`#warning`、pragma；
 - CMake depfile（`-MD -MF -MT`）与依赖内容检查；
@@ -422,7 +455,10 @@ CAT(, x)                  // x
 - 不支持预编译头（PCH）。
 - 未知 pragma 默认透传；未知指令默认 warning + 透传，`--strict` 时作为 error。
 - include guard 通过正常 `#ifndef` 语义处理，未做“检测 guard 后跳过整个文件”的性能优化。
-- 字符常量的多字符值、宽字符/UTF 字符集处理采用尽力而为策略，不保证与所有编译器完全一致。
+- 字符常量按 GCC 15.2 / Windows x64 实现：普通字符使用所选执行字符集，`wchar_t` 为 16 位。
+- 支持 `-finput-charset` / `-fexec-charset` 的常用值：`UTF-8`、`UTF-16`、`UTF-16LE/BE`、`GBK`/`CP936`、`CP1252`、`ISO-8859-1`、`ASCII`、`CP<n>`；字符串字面量尚未按执行字符集转码，当前只影响 `#if` 字符常量。
+- 支持 `-funsigned-char` / `-fsigned-char`；`-funsigned-char` 同时定义 `__CHAR_UNSIGNED__`。
+- `u8` 多字节字符、`L`/`u` 的非 BMP 字符会报错；极端超过 32 位的 `\x` 溢出只做截断/警告，未逐位模拟 GCC 的全部诊断。
 - 引号和尖括号 include 都支持 Windows 反斜杠路径；`#include /*comment*/ <...>` 这类“注释夹在关键字和 header name 之间”的组合仍是边界。
 - depfile 记录实际处理的 quote/angle include，不记录 `__has_include` 探测。
 - `#pragma GCC system_header` 会被消费，不写入 `.i`；系统头的完整警告抑制模型仍未实现。

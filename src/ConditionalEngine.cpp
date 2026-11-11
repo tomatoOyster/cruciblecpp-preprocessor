@@ -1,7 +1,10 @@
 #include "ConditionalEngine.h"
 
+#include "Charset.h"
 #include "Preprocessor.h"
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <string>
@@ -158,46 +161,134 @@ bool parseIntegerLiteral(std::string_view text, PPValue& out,
     return true;
 }
 
-bool decodeEscape(std::string_view text, std::size_t& i, unsigned& value) {
+enum class CharacterPrefix { Ordinary, Wide, Utf16, Utf32, Utf8 };
+
+bool isUnicodeScalar(std::uint32_t cp) {
+    return cp <= 0x10FFFFu && !(cp >= 0xD800u && cp <= 0xDFFFu);
+}
+
+bool decodeUtf8(std::string_view text, std::size_t& i, std::uint32_t& cp,
+                std::string& error) {
+    const unsigned char first = static_cast<unsigned char>(text[i]);
+    if (first < 0x80u) {
+        cp = first;
+        ++i;
+        return true;
+    }
+
+    std::size_t extra = 0;
+    std::uint32_t value = 0;
+    std::uint32_t minimum = 0;
+    if (first >= 0xC2u && first <= 0xDFu) {
+        extra = 1;
+        value = first & 0x1Fu;
+        minimum = 0x80u;
+    } else if (first >= 0xE0u && first <= 0xEFu) {
+        extra = 2;
+        value = first & 0x0Fu;
+        minimum = 0x800u;
+    } else if (first >= 0xF0u && first <= 0xF4u) {
+        extra = 3;
+        value = first & 0x07u;
+        minimum = 0x10000u;
+    } else {
+        error = "invalid UTF-8 sequence in character literal";
+        return false;
+    }
+
+    if (i + extra >= text.size()) {
+        error = "truncated UTF-8 sequence in character literal";
+        return false;
+    }
+    for (std::size_t k = 1; k <= extra; ++k) {
+        const unsigned char continuation =
+            static_cast<unsigned char>(text[i + k]);
+        if ((continuation & 0xC0u) != 0x80u) {
+            error = "invalid UTF-8 sequence in character literal";
+            return false;
+        }
+        value = (value << 6) | (continuation & 0x3Fu);
+    }
+    if (value < minimum || !isUnicodeScalar(value)) {
+        error = "invalid UTF-8 sequence in character literal";
+        return false;
+    }
+    cp = value;
+    i += extra + 1;
+    return true;
+}
+
+void appendUtf8(std::vector<std::uint32_t>& units, std::uint32_t cp) {
+    if (cp <= 0x7Fu) {
+        units.push_back(cp);
+    } else if (cp <= 0x7FFu) {
+        units.push_back(0xC0u | (cp >> 6));
+        units.push_back(0x80u | (cp & 0x3Fu));
+    } else if (cp <= 0xFFFFu) {
+        units.push_back(0xE0u | (cp >> 12));
+        units.push_back(0x80u | ((cp >> 6) & 0x3Fu));
+        units.push_back(0x80u | (cp & 0x3Fu));
+    } else {
+        units.push_back(0xF0u | (cp >> 18));
+        units.push_back(0x80u | ((cp >> 12) & 0x3Fu));
+        units.push_back(0x80u | ((cp >> 6) & 0x3Fu));
+        units.push_back(0x80u | (cp & 0x3Fu));
+    }
+}
+
+struct EscapeValue {
+    std::uint32_t value = 0;
+    bool universal = true;
+    bool hexadecimal = false;
+    bool octal = false;
+};
+
+bool decodeEscape(std::string_view text, std::size_t& i, EscapeValue& out,
+                  std::string& error) {
     // i points at the backslash.
     if (i + 1 >= text.size()) {
+        error = "incomplete escape sequence in character literal";
         return false;
     }
     const char c = text[i + 1];
     i += 2;
+    out = {};
     switch (c) {
     case 'a':
-        value = 7;
+        out.value = 7;
         return true;
     case 'b':
-        value = 8;
+        out.value = 8;
+        return true;
+    case 'e':
+        out.value = 27; // GNU extension, matches GCC on Windows.
         return true;
     case 'f':
-        value = 12;
+        out.value = 12;
         return true;
     case 'n':
-        value = 10;
+        out.value = 10;
         return true;
     case 'r':
-        value = 13;
+        out.value = 13;
         return true;
     case 't':
-        value = 9;
+        out.value = 9;
         return true;
     case 'v':
-        value = 11;
+        out.value = 11;
         return true;
     case '\\':
-        value = '\\';
+        out.value = '\\';
         return true;
     case '\'':
-        value = '\'';
+        out.value = '\'';
         return true;
     case '"':
-        value = '"';
+        out.value = '"';
         return true;
     case '?':
-        value = '?';
+        out.value = '?';
         return true;
     case '0':
     case '1':
@@ -207,19 +298,23 @@ bool decodeEscape(std::string_view text, std::size_t& i, unsigned& value) {
     case '5':
     case '6':
     case '7': {
-        unsigned result = static_cast<unsigned>(c - '0');
+        out.octal = true;
+        out.universal = false;
+        std::uint32_t result = static_cast<std::uint32_t>(c - '0');
         int count = 1;
         while (count < 3 && i < text.size() && text[i] >= '0' &&
                text[i] <= '7') {
-            result = result * 8 + static_cast<unsigned>(text[i] - '0');
+            result = result * 8 + static_cast<std::uint32_t>(text[i] - '0');
             ++i;
             ++count;
         }
-        value = result;
+        out.value = result;
         return true;
     }
     case 'x': {
-        unsigned result = 0;
+        out.hexadecimal = true;
+        out.universal = false;
+        std::uint64_t result = 0;
         bool any = false;
         while (i < text.size()) {
             const char h = text[i];
@@ -234,23 +329,30 @@ bool decodeEscape(std::string_view text, std::size_t& i, unsigned& value) {
             if (digit < 0) {
                 break;
             }
-            result = result * 16 + static_cast<unsigned>(digit);
+            if (result > 0x0FFFFFFFULL) {
+                result = 0xFFFFFFFFULL;
+            } else {
+                result = result * 16 + static_cast<std::uint64_t>(digit);
+            }
             any = true;
             ++i;
         }
         if (!any) {
+            error = "\\x used with no following hex digits";
             return false;
         }
-        value = result;
+        out.value = static_cast<std::uint32_t>(
+            std::min<std::uint64_t>(result, 0xFFFFFFFFULL));
         return true;
     }
     case 'u':
     case 'U': {
         const std::size_t digits = c == 'u' ? 4 : 8;
         if (i + digits > text.size()) {
+            error = "incomplete universal character name";
             return false;
         }
-        unsigned result = 0;
+        std::uint32_t result = 0;
         for (std::size_t k = 0; k < digits; ++k) {
             const char h = text[i + k];
             int digit = -1;
@@ -262,22 +364,31 @@ bool decodeEscape(std::string_view text, std::size_t& i, unsigned& value) {
                 digit = h - 'A' + 10;
             }
             if (digit < 0) {
+                error = "invalid universal character name";
                 return false;
             }
-            result = result * 16 + static_cast<unsigned>(digit);
+            result = result * 16 + static_cast<std::uint32_t>(digit);
+        }
+        if (!isUnicodeScalar(result)) {
+            error = "invalid universal character name";
+            return false;
         }
         i += digits;
-        value = result;
+        out.value = result;
         return true;
     }
     default:
-        value = static_cast<unsigned char>(c);
+        // GCC accepts unknown escapes with a warning and uses the character
+        // itself. Keep the value; no warning channel is needed for #if.
+        out.value = static_cast<unsigned char>(c);
         return true;
     }
 }
 
 bool parseCharacterLiteral(std::string_view text, PPValue& out,
-                           std::string& error) {
+                           std::string& error,
+                           std::vector<std::string>& warnings,
+                           const CharacterOptions& characterOptions) {
     const std::size_t quote = text.find('\'');
     if (quote == std::string_view::npos || text.size() < quote + 2) {
         error = "invalid character literal";
@@ -289,41 +400,170 @@ bool parseCharacterLiteral(std::string_view text, PPValue& out,
         return false;
     }
 
-    std::string_view body = text.substr(quote + 1, end - quote - 1);
+    const std::string_view prefixText = text.substr(0, quote);
+    CharacterPrefix prefix = CharacterPrefix::Ordinary;
+    if (prefixText == "L") {
+        prefix = CharacterPrefix::Wide;
+    } else if (prefixText == "u") {
+        prefix = CharacterPrefix::Utf16;
+    } else if (prefixText == "U") {
+        prefix = CharacterPrefix::Utf32;
+    } else if (prefixText == "u8") {
+        prefix = CharacterPrefix::Utf8;
+    } else if (!prefixText.empty()) {
+        error = "invalid character literal prefix";
+        return false;
+    }
+
+    CharsetEncoding executionCharset;
+    if (!parseCharset(characterOptions.executionCharset, executionCharset,
+                      error)) {
+        return false;
+    }
+
+    const std::string_view body = text.substr(quote + 1, end - quote - 1);
     if (body.empty()) {
         error = "empty character literal";
         return false;
     }
 
-    std::uint64_t value = 0;
-    std::size_t count = 0;
+    std::vector<std::uint32_t> units;
     for (std::size_t i = 0; i < body.size();) {
-        unsigned byte = 0;
+        EscapeValue escaped;
+        bool universal = false;
         if (body[i] == '\\') {
-            if (!decodeEscape(body, i, byte)) {
-                error = "invalid escape sequence in character literal";
+            if (!decodeEscape(body, i, escaped, error)) {
                 return false;
             }
+            universal = escaped.universal;
         } else {
-            byte = static_cast<unsigned char>(body[i]);
-            ++i;
+            std::uint32_t cp = 0;
+            if (!decodeUtf8(body, i, cp, error)) {
+                return false;
+            }
+            escaped.value = cp;
+            universal = true;
         }
-        value = (value << 8) | (byte & 0xFFu);
-        ++count;
+
+        if (universal) {
+            const std::uint32_t cp = escaped.value;
+            if (prefix == CharacterPrefix::Ordinary) {
+                // GCC 15.2 x86_64-w64-mingw32 defaults to UTF-8 as the
+                // execution charset; -fexec-charset can select a code page.
+                // Ordinary UTF-8/UCN characters become execution-charset
+                // code units (e.g. '中' == 0xE4B8AD under UTF-8).
+                std::vector<std::uint32_t> encoded;
+                if (!encodeCodePoint(cp, executionCharset, encoded, error)) {
+                    return false;
+                }
+                units.insert(units.end(), encoded.begin(), encoded.end());
+            } else if (prefix == CharacterPrefix::Wide ||
+                       prefix == CharacterPrefix::Utf16) {
+                // GCC 15.2 x86_64-w64-mingw32: wchar_t/char16_t are 16-bit.
+                // Non-BMP source characters cannot occupy one code unit; this
+                // implementation rejects them instead of truncating.
+                if (cp > 0xFFFFu) {
+                    error = "character not encodable in a single code unit";
+                    return false;
+                }
+                units.push_back(cp);
+            } else if (prefix == CharacterPrefix::Utf32) {
+                units.push_back(cp);
+            } else { // u8
+                // GCC 15.2 in C++20 mode gives u8'x' type char (one UTF-8
+                // code unit). A multi-byte character is an error; GCC still
+                // evaluates its last byte, but the diagnostic is fatal here.
+                std::vector<std::uint32_t> encoded;
+                appendUtf8(encoded, cp);
+                if (encoded.size() != 1) {
+                    error = "character not encodable in a single code unit";
+                    return false;
+                }
+                units.push_back(encoded.front());
+            }
+        } else {
+            // Numeric escapes are code-unit values, not Unicode scalars.
+            // GCC truncates to the target code unit and warns.
+            std::uint32_t value = escaped.value;
+            std::uint32_t maximum = 0xFFu;
+            if (prefix == CharacterPrefix::Wide ||
+                prefix == CharacterPrefix::Utf16) {
+                maximum = 0xFFFFu;
+            } else if (prefix == CharacterPrefix::Utf32) {
+                maximum = 0xFFFFFFFFu;
+            }
+            if (value > maximum) {
+                warnings.push_back(escaped.hexadecimal
+                                       ? "hex escape sequence out of range"
+                                       : "octal escape sequence out of range");
+                value &= maximum;
+            }
+            units.push_back(value);
+        }
     }
-    if (count == 0) {
+
+    if (units.empty()) {
         error = "empty character literal";
         return false;
     }
+
+    std::uint64_t value = 0;
+    if (prefix == CharacterPrefix::Ordinary) {
+        // GCC 15.2 x86_64-w64-mingw32 multi-character constants are
+        // implementation-defined: bytes are packed most-significant first
+        // (so 'ab' is 0x6162), and more than four bytes keep the last four
+        // with a warning ('abcde' is 0x62636465).
+        const std::size_t originalCount = units.size();
+        if (units.size() > 4) {
+            warnings.push_back(
+                "multi-character literal with " +
+                std::to_string(originalCount) +
+                " characters exceeds 'int' size of 4 bytes");
+            units.erase(units.begin(),
+                        units.end() - static_cast<std::ptrdiff_t>(4));
+        } else if (units.size() > 1) {
+            warnings.push_back("multi-character character constant");
+        }
+        for (const std::uint32_t unit : units) {
+            value = (value << 8) | (unit & 0xFFu);
+        }
+        // GCC 15.2 x86_64-w64-mingw32 has signed plain char by default, so
+        // '\x80' promotes to -128 and '\xFF' to -1 in #if. -funsigned-char
+        // disables this sign extension.
+        if (!characterOptions.unsignedChar && units.size() == 1 &&
+            (value & 0x80u) != 0) {
+            value = static_cast<std::uint64_t>(
+                static_cast<std::int64_t>(
+                    static_cast<std::int8_t>(value & 0xFFu)));
+        }
+    } else if (prefix == CharacterPrefix::Wide) {
+        if (units.size() > 1) {
+            warnings.push_back(
+                "multi-character literal cannot have an encoding prefix");
+            value = units.back();
+        } else {
+            value = units.front();
+        }
+    } else {
+        if (units.size() > 1) {
+            error = "multi-character literal cannot have an encoding prefix";
+            return false;
+        }
+        value = units.front();
+    }
+
     out.bits = value;
     out.isUnsigned = false;
     return true;
 }
-
 class ExpressionParser {
 public:
-    ExpressionParser(const std::vector<Token>& tokens, DiagnosticSink& diagnostics)
-        : tokens_(tokens), diagnostics_(diagnostics) {}
+    ExpressionParser(const std::vector<Token>& tokens,
+                     DiagnosticSink& diagnostics,
+                     const CharacterOptions& characterOptions)
+        : tokens_(tokens),
+          diagnostics_(diagnostics),
+          characterOptions_(characterOptions) {}
 
     bool evaluate() {
         if (tokens_.empty()) {
@@ -679,14 +919,21 @@ private:
 
         if (token.kind == TokenKind::CharLiteral) {
             ++index_;
-            if (!eval) {
-                return makeSigned(0);
-            }
             PPValue value;
             std::string error;
-            if (!parseCharacterLiteral(token.text, value, error)) {
+            std::vector<std::string> warnings;
+            if (!parseCharacterLiteral(token.text, value, error, warnings,
+                                       characterOptions_)) {
                 diagnostics_.error(token.loc, error);
                 ok_ = false;
+                return makeSigned(0);
+            }
+            // Character literals are validated even in short-circuited
+            // branches, matching GCC's diagnostic behavior.
+            for (const auto& warning : warnings) {
+                diagnostics_.warning(token.loc, warning);
+            }
+            if (!eval) {
                 return makeSigned(0);
             }
             return value;
@@ -718,6 +965,7 @@ private:
 
     const std::vector<Token>& tokens_;
     DiagnosticSink& diagnostics_;
+    CharacterOptions characterOptions_;
     std::size_t index_ = 0;
     bool ok_ = true;
 };
@@ -850,12 +1098,12 @@ void ConditionalEngine::reportUnclosed() {
 
 bool ConditionalEngine::evaluateExpression(
     const std::vector<Token>& tokens, const SourceLocation& loc,
-    DiagnosticSink& diagnostics) {
+    DiagnosticSink& diagnostics, const CharacterOptions& characterOptions) {
     if (tokens.empty()) {
         diagnostics.error(loc, "empty #if expression");
         return false;
     }
-    ExpressionParser parser(tokens, diagnostics);
+    ExpressionParser parser(tokens, diagnostics, characterOptions);
     return parser.evaluate();
 }
 

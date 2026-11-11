@@ -1,5 +1,21 @@
 # Changelog
 
+## V2.1.0 — 2026-11-11
+
+### 新增
+
+- 多文件预处理：支持多个输入文件与按顺序对应的多个输出文件。
+- 两种写法：
+  ```text
+  cruciblecpp-preprocessor -P a.cpp b.cpp -o a.i b.i
+  cruciblecpp-preprocessor -P a.cpp b.cpp -o a.i -o b.i
+  ```
+- 输入/输出数量不匹配时返回命令行错误。
+- 多文件模式暂不支持 depfile；`-MD` 只允许单输入。
+- CTest 增加到 51 个，覆盖三输入三输出、字符常量与 charset 边界。
+- `#if` 字符常量求值对齐 GCC 15.2 / Windows x64。
+- 支持 `-finput-charset`、`-fexec-charset`、`-funsigned-char`、`-fsigned-char`。
+
 ## V2.0.0 — 2026-11-11
 
 ### 新增

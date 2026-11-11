@@ -1,7 +1,7 @@
 # Windows UCRT64 GCC 15.2 预处理器：目标、现状与剩余差距
 
 > 当前工程：[cruciblecpp-preprocessor/](cruciblecpp-preprocessor/)  
-> 当前版本：**V2.0.0**
+> 当前版本：**V2.1.0**
 >
 > 兼容矩阵：**Windows x64 + MinGW-w64 UCRT64 + GCC 15.2.0 + C++20**
 
@@ -37,6 +37,8 @@
 | 搜索路径 | `-I` / `-isystem` + PATH 中 GCC 自动发现 | 95% |
 | GCC 15.2 预定义宏 | 硬编码 profile | 90% |
 | `__has_include` | quote/angle 都支持；宏展开后二次处理 | 90% |
+| `#if` 字符常量 | 普通/多字符/L/u/U/u8/UCN，按 GCC 15.2 Windows x64 | 90% |
+| charset | `-finput-charset` / `-fexec-charset` / `-funsigned-char` | 85% |
 | `__has_builtin` / `__has_attribute` | 常用集合 | 70% |
 | `__has_cpp_attribute` | 常用属性 | 70% |
 | pragma | `once`、`push/pop`、`message`、`system_header`、未知透传 | 70%–80% |
@@ -271,7 +273,7 @@
 
 - 标准库头可以预处理并编译；
 - `<>` 搜索、`__has_*`、system_header、depfile 都已打通；
-- 34 个 CTest 通过；
+- 51 个 CTest 通过；
 - CMake + Ninja 的标准头项目实测通过；
 - 不传 `-isystem` 的自动发现标准头测试通过。
 

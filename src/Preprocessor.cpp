@@ -1,5 +1,6 @@
 #include "Preprocessor.h"
 
+#include "Charset.h"
 #include "ConditionalEngine.h"
 #include "FileReader.h"
 #include "GccDiscovery.h"
@@ -727,6 +728,21 @@ bool Preprocessor::defineFromCommandLine(const std::string& spec) {
 
 bool Preprocessor::applyCommandLine() {
     loadGccProfile();
+
+    if (options_.unsignedChar) {
+        defineFromCommandLine("__CHAR_UNSIGNED__=1");
+    }
+
+    CharsetEncoding execution;
+    std::string charsetError;
+    if (!parseCharset(options_.executionCharset, execution, charsetError)) {
+        diagnostics_.error({}, charsetError);
+    } else if (execution.kind != CharsetEncoding::Kind::Utf8) {
+        macros_->undef("__GNUC_EXECUTION_CHARSET_NAME");
+        defineFromCommandLine("__GNUC_EXECUTION_CHARSET_NAME=\"" +
+                              options_.executionCharset + "\"");
+    }
+
     for (const auto& action : options_.commandActions) {
         if (action.kind == CommandLineAction::Kind::Define) {
             defineFromCommandLine(action.text);
@@ -793,7 +809,7 @@ bool Preprocessor::processFile(const std::filesystem::path& path,
     }
 
     FileReader reader;
-    auto file = reader.read(path, diagnostics_);
+    auto file = reader.read(path, diagnostics_, options_.inputCharset);
     if (!file) {
         return false;
     }
@@ -1739,8 +1755,12 @@ bool Preprocessor::evaluateCondition(const std::vector<Token>& expression,
         }
     }
 
+    CharacterOptions characterOptions;
+    characterOptions.executionCharset = options_.executionCharset;
+    characterOptions.unsignedChar = options_.unsignedChar;
     return ConditionalEngine::evaluateExpression(expressionTokens, loc,
-                                                  diagnostics_);
+                                                  diagnostics_,
+                                                  characterOptions);
 }
 
 void Preprocessor::recordDependency(const std::filesystem::path& path) {

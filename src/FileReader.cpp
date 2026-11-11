@@ -1,5 +1,6 @@
 #include "FileReader.h"
 
+#include "Charset.h"
 #include "Preprocessor.h"
 
 #include <fstream>
@@ -78,7 +79,8 @@ std::string normalizeNewlines(std::string input) {
 } // namespace
 
 std::shared_ptr<SourceFile> FileReader::read(const std::filesystem::path& path,
-                                             DiagnosticSink& diagnostics) {
+                                             DiagnosticSink& diagnostics,
+                                             std::string_view inputCharset) {
     std::ifstream in(path, std::ios::binary);
     if (!in) {
         diagnostics.error({}, "cannot open source file '" + pathToUtf8(path) +
@@ -94,12 +96,19 @@ std::shared_ptr<SourceFile> FileReader::read(const std::filesystem::path& path,
     }
 
     std::string input = stream.str();
-    if (input.size() >= 3 &&
-        static_cast<unsigned char>(input[0]) == 0xEF &&
-        static_cast<unsigned char>(input[1]) == 0xBB &&
-        static_cast<unsigned char>(input[2]) == 0xBF) {
-        input.erase(0, 3);
+
+    CharsetEncoding encoding;
+    std::string charsetError;
+    if (!parseCharset(inputCharset, encoding, charsetError)) {
+        diagnostics.error({}, charsetError);
+        return nullptr;
     }
+    std::string decoded;
+    if (!decodeToUtf8(input, encoding, decoded, charsetError)) {
+        diagnostics.error({}, "'" + pathToUtf8(path) + "': " + charsetError);
+        return nullptr;
+    }
+    input = std::move(decoded);
 
     input = normalizeNewlines(std::move(input));
 

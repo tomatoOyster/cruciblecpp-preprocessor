@@ -1,3 +1,4 @@
+#include "Charset.h"
 #include "GccDiscovery.h"
 #include "Preprocessor.h"
 
@@ -68,10 +69,10 @@ std::vector<std::string> collectArguments(int argc, char** argv) {
 }
 
 void printUsage(std::ostream& out) {
-    out << "Usage: cruciblecpp-preprocessor [options] <input.cpp>\n"
+    out << "Usage: cruciblecpp-preprocessor [options] <input.cpp...>\n"
            "\n"
            "Options:\n"
-           "  -o, --output <file>          Write output to <file> (default: stdout)\n"
+           "  -o, --output <file...>       Output file(s), in input order (default: stdout)\n"
            "  -I, --include-dir <dir>      Add a user include directory (repeatable)\n"
            "  -isystem <dir>               Add a system include directory (repeatable)\n"
            "  -nostdinc                    Do not auto-discover GCC include directories\n"
@@ -83,6 +84,10 @@ void printUsage(std::ostream& out) {
            "  -P, --no-line-markers        Do not emit #line markers\n"
            "  -C, --keep-comments          Preserve comments in the output\n"
            "  -std=<c++17|c++20|c++23>     Set __cplusplus (default: c++20)\n"
+           "  -finput-charset=<name>       Source charset (default: UTF-8)\n"
+           "  -fexec-charset=<name>        Execution charset for char constants (default: UTF-8)\n"
+           "  -funsigned-char              Treat plain char as unsigned\n"
+           "  -fsigned-char                Treat plain char as signed (default)\n"
            "  -MD, -MMD                    Generate a CMake/Ninja depfile\n"
            "  -MF <file>                   Dependency file path\n"
            "  -MT <target>                 Dependency target\n"
@@ -117,6 +122,8 @@ bool parseInteger(std::string_view text, int& value) {
 
 int main(int argc, char** argv) {
     crucible::PreprocessorOptions options;
+    std::vector<std::filesystem::path> inputs;
+    std::vector<std::filesystem::path> outputs;
     const std::vector<std::string> arguments = collectArguments(argc, argv);
 
     for (std::size_t i = 1; i < arguments.size(); ++i) {
@@ -134,11 +141,21 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (arg == "--version") {
-            std::cout << "cruciblecpp-preprocessor 2.0.0\n";
+            std::cout << "cruciblecpp-preprocessor 2.1.0\n";
             return 0;
         }
         if (arg == "-o" || arg == "--output") {
-            options.output = pathFromUtf8(nextValue(arg.c_str()));
+            outputs.push_back(pathFromUtf8(nextValue(arg.c_str())));
+            // Multi-file form: inputs first, then `-o out1 out2 ...`.
+            // For the common `-o out input.cpp` form, inputs is still
+            // empty here and only the single value is consumed.
+            if (!inputs.empty()) {
+                while (i + 1 < arguments.size() &&
+                       (arguments[i + 1].empty() ||
+                        arguments[i + 1].front() != '-')) {
+                    outputs.push_back(pathFromUtf8(arguments[++i]));
+                }
+            }
             continue;
         }
         if (arg == "-I" || arg == "--include-dir") {
@@ -274,6 +291,30 @@ int main(int argc, char** argv) {
             options.systemDirs.push_back(pathFromUtf8(arg.substr(8)));
             continue;
         }
+        if (arg.rfind("-finput-charset=", 0) == 0) {
+            options.inputCharset = arg.substr(16);
+            continue;
+        }
+        if (arg == "-finput-charset") {
+            options.inputCharset = nextValue(arg.c_str());
+            continue;
+        }
+        if (arg.rfind("-fexec-charset=", 0) == 0) {
+            options.executionCharset = arg.substr(15);
+            continue;
+        }
+        if (arg == "-fexec-charset") {
+            options.executionCharset = nextValue(arg.c_str());
+            continue;
+        }
+        if (arg == "-funsigned-char") {
+            options.unsignedChar = true;
+            continue;
+        }
+        if (arg == "-fsigned-char") {
+            options.unsignedChar = false;
+            continue;
+        }
         if (arg.rfind("-std=", 0) == 0) {
             options.standard = arg.substr(5);
             continue;
@@ -284,13 +325,9 @@ int main(int argc, char** argv) {
         }
         if (arg == "--") {
             ++i;
-            if (i < arguments.size()) {
-                options.input = pathFromUtf8(arguments[i]);
+            while (i < arguments.size()) {
+                inputs.push_back(pathFromUtf8(arguments[i]));
                 ++i;
-            }
-            if (i < arguments.size()) {
-                std::cerr << "error: only one input file is supported\n";
-                return 2;
             }
             break;
         }
@@ -299,22 +336,65 @@ int main(int argc, char** argv) {
             printUsage(std::cerr);
             return 2;
         }
-        if (!options.input.empty()) {
-            std::cerr << "error: only one input file is supported\n";
-            return 2;
-        }
-        options.input = pathFromUtf8(arg);
+        inputs.push_back(pathFromUtf8(arg));
     }
 
-    if (options.input.empty()) {
+    if (inputs.empty()) {
         std::cerr << "error: no input file\n";
         printUsage(std::cerr);
         return 2;
     }
-    if (options.output == std::filesystem::path("-")) {
-        options.output.clear();
+    if (outputs.empty()) {
+        if (inputs.size() != 1) {
+            std::cerr << "error: multiple inputs require matching -o outputs\n";
+            return 2;
+        }
+        outputs.emplace_back();
+    }
+    if (outputs.size() != inputs.size()) {
+        std::cerr << "error: " << inputs.size() << " input file(s) but "
+                  << outputs.size() << " output file(s)\n";
+        return 2;
+    }
+    if (options.generateDependencies && inputs.size() > 1) {
+        std::cerr << "error: depfile generation supports one input at a time\n";
+        return 2;
     }
 
-    crucible::Preprocessor preprocessor(std::move(options));
-    return preprocessor.run();
+    crucible::CharsetEncoding charset;
+    std::string charsetError;
+    if (!crucible::parseCharset(options.inputCharset, charset, charsetError)) {
+        std::cerr << "error: " << charsetError << '\n';
+        return 2;
+    }
+    if (!crucible::parseCharset(options.executionCharset, charset,
+                                charsetError)) {
+        std::cerr << "error: " << charsetError << '\n';
+        return 2;
+    }
+    if (charset.kind == crucible::CharsetEncoding::Kind::Utf16LE ||
+        charset.kind == crucible::CharsetEncoding::Kind::Utf16BE) {
+        std::cerr << "error: UTF-16 is not supported as an execution charset\n";
+        return 2;
+    }
+
+    int result = 0;
+    for (std::size_t index = 0; index < inputs.size(); ++index) {
+        crucible::PreprocessorOptions fileOptions = options;
+        fileOptions.input = inputs[index];
+        fileOptions.output = outputs[index];
+        if (fileOptions.output == std::filesystem::path("-")) {
+            fileOptions.output.clear();
+        }
+        if (fileOptions.output.empty() && inputs.size() > 1) {
+            std::cerr << "error: empty output path for multi-file mode\n";
+            return 2;
+        }
+        crucible::Preprocessor preprocessor(std::move(fileOptions));
+        const int code = preprocessor.run();
+        if (code != 0 && result == 0) {
+            result = code;
+        }
+    }
+    return result;
 }

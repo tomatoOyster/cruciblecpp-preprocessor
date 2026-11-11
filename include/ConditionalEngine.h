@@ -10,6 +10,11 @@ namespace crucible {
 
 class DiagnosticSink;
 
+struct CharacterOptions {
+    std::string executionCharset = "UTF-8";
+    bool unsignedChar = false;
+};
+
 class ConditionalEngine {
 public:
     using Evaluator =
@@ -33,9 +38,10 @@ public:
 
     // Evaluates an already macro-expanded #if expression. Also used by the
     // preprocessor after it has handled defined/__has_include.
-    static bool evaluateExpression(const std::vector<Token>& tokens,
-                                   const SourceLocation& loc,
-                                   DiagnosticSink& diagnostics);
+    static bool evaluateExpression(
+        const std::vector<Token>& tokens, const SourceLocation& loc,
+        DiagnosticSink& diagnostics,
+        const CharacterOptions& characterOptions = {});
 
 private:
     struct Frame {

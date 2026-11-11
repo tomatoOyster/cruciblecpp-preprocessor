@@ -242,7 +242,7 @@ std::string normalizedKey(const std::filesystem::path& path) {
 
 } // namespace
 
-GccDiscovery discoverGccFromPath() {
+static GccDiscovery discoverGccFromPathUncached() {
     GccDiscovery result;
     const std::filesystem::path compiler = findCompiler();
     if (compiler.empty()) {
@@ -326,6 +326,12 @@ GccDiscovery discoverGccFromPath() {
         result.error = "could not parse GCC include search list";
     }
     return result;
+}
+
+GccDiscovery discoverGccFromPath() {
+    // One discovery per process; multi-file invocations reuse it.
+    static const GccDiscovery cached = discoverGccFromPathUncached();
+    return cached;
 }
 
 } // namespace crucible
