@@ -1,0 +1,8 @@
+build/
+build-*/
+output/*.i
+output/*.tmp
+*.o
+*.obj
+*.exe
+*.d

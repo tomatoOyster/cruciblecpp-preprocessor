@@ -1,0 +1,162 @@
+#pragma once
+
+#include "Token.h"
+
+#include <cstdint>
+#include <filesystem>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <unordered_set>
+#include <vector>
+
+namespace crucibe {
+
+class ConditionalEngine;
+class IncludeHandler;
+class MacroExpander;
+class MacroRegistry;
+class OutputWriter;
+class SpecialOperator;
+
+enum class Severity { Note, Warning, Error, Fatal };
+
+struct Diagnostic {
+    Severity severity = Severity::Error;
+    SourceLocation loc;
+    std::string message;
+};
+
+class DiagnosticSink {
+public:
+    explicit DiagnosticSink(int maxErrors = 20);
+
+    void setWarningsAsErrors(bool enabled) { warningsAsErrors_ = enabled; }
+    void setMaxErrors(int max) { maxErrors_ = max; }
+    void setIncludeStack(std::vector<std::string> stack) {
+        includeStack_ = std::move(stack);
+    }
+
+    void report(Severity severity, const SourceLocation& loc,
+                std::string message);
+    void error(const SourceLocation& loc, std::string message) {
+        report(Severity::Error, loc, std::move(message));
+    }
+    void warning(const SourceLocation& loc, std::string message) {
+        report(Severity::Warning, loc, std::move(message));
+    }
+    void note(const SourceLocation& loc, std::string message) {
+        report(Severity::Note, loc, std::move(message));
+    }
+
+    bool hasError() const { return errorCount_ > 0; }
+    bool fatal() const { return fatal_; }
+    bool limitReached() const { return limitReached_; }
+    int errorCount() const { return errorCount_; }
+
+private:
+    int maxErrors_ = 20;
+    int errorCount_ = 0;
+    bool warningsAsErrors_ = false;
+    bool fatal_ = false;
+    bool limitReached_ = false;
+    std::vector<std::string> includeStack_;
+};
+
+struct CommandLineAction {
+    enum class Kind { Define, Undef };
+    Kind kind = Kind::Define;
+    std::string text;
+};
+
+struct PreprocessorOptions {
+    std::filesystem::path input;
+    std::filesystem::path output;
+
+    std::vector<std::filesystem::path> includeDirs;
+    std::vector<std::filesystem::path> systemDirs;
+    std::vector<CommandLineAction> commandActions;
+    std::vector<std::filesystem::path> forcedIncludes;
+
+    bool generateDependencies = false;
+    std::filesystem::path dependencyFile;
+    std::string dependencyTarget;
+    bool quoteDependencyTarget = false;
+
+    bool lineMarkers = true;
+    bool keepComments = false;
+    bool warningsAsErrors = false;
+    bool strict = false;
+    bool dropUnknownPragmas = false;
+    bool outputOnError = true;
+    bool verbose = false;
+
+    int maxIncludeDepth = 200;
+    int maxErrors = 20;
+    std::string standard = "c++20";
+};
+
+class Preprocessor {
+public:
+    explicit Preprocessor(PreprocessorOptions options);
+    ~Preprocessor();
+
+    Preprocessor(const Preprocessor&) = delete;
+    Preprocessor& operator=(const Preprocessor&) = delete;
+
+    int run();
+
+private:
+    bool applyCommandLine();
+    bool loadGccProfile();
+    bool defineFromCommandLine(const std::string& spec);
+
+    bool processFile(const std::filesystem::path& path, bool angledInclude);
+    void processTokenStream(std::shared_ptr<SourceFile> file);
+    bool processDirective(const std::vector<Token>& line,
+                          std::size_t zeroBasedLine, bool& wroteOutput);
+    bool processInclude(const std::vector<Token>& line, bool nextInclude,
+                        const SourceLocation& loc);
+    bool processDefine(const std::vector<Token>& line,
+                       const SourceLocation& loc, bool fromProfile = false);
+    bool processConditional(const std::vector<Token>& line,
+                            const std::string& directive,
+                            const SourceLocation& loc);
+    bool evaluateCondition(const std::vector<Token>& expression,
+                           const SourceLocation& loc);
+
+    void handlePragmaTokens(const std::vector<Token>& tokens);
+    bool handlePragmaText(std::string_view text, const SourceLocation& loc);
+    void handleTextTokens(const std::vector<Token>& tokens);
+    std::vector<Token> expandTokens(const std::vector<Token>& tokens);
+
+    bool writeOutput();
+    bool writeDependencies();
+    void recordDependency(const std::filesystem::path& path);
+    std::shared_ptr<SourceFile> makeSyntheticFile(
+        std::string_view text, std::string_view displayName);
+
+    PreprocessorOptions options_;
+    DiagnosticSink diagnostics_;
+
+    std::unique_ptr<MacroRegistry> macros_;
+    std::unique_ptr<MacroExpander> expander_;
+    std::unique_ptr<ConditionalEngine> conditionals_;
+    std::unique_ptr<IncludeHandler> includes_;
+    std::unique_ptr<SpecialOperator> special_;
+    std::unique_ptr<OutputWriter> writer_;
+
+    std::shared_ptr<SourceFile> currentFile_;
+    std::filesystem::path currentPath_;
+    std::string currentPresumedFile_;
+    std::string baseFile_;
+    std::vector<std::string> includeStack_;
+    int lineDelta_ = 0;
+    int includeLevel_ = 0;
+    int counter_ = 0;
+    int filesProcessed_ = 0;
+    std::vector<std::filesystem::path> dependencies_;
+    std::unordered_set<std::string> dependencyKeys_;
+};
+
+} // namespace crucibe
