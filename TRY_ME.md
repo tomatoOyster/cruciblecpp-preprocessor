@@ -3,25 +3,25 @@
 ## 可执行文件
 
 ```text
-build\crucibecpp-preprocessor.exe
+build\cruciblecpp-preprocessor.exe
 ```
 
-这是 Windows x64 静态链接版本（不需要额外 MinGW DLL），版本 `1.0.1`，目标为 **MinGW-w64 UCRT64 GCC 15.2.0 + C++20**。
+这是 Windows x64 静态链接版本（不需要额外 MinGW DLL），版本 `1.0.2`，目标为 **MinGW-w64 UCRT64 GCC 15.2.0 + C++20**。
 
 ## 先跑两个示例
 
 ```powershell
-cd crucibecpp-preprocessor
+cd cruciblecpp-preprocessor
 
-.\build\crucibecpp-preprocessor.exe --version
+.\build\cruciblecpp-preprocessor.exe --version
 
 # 示例 1
-.\build\crucibecpp-preprocessor.exe -P examples\hello.cpp -o output\hello.i
+.\build\cruciblecpp-preprocessor.exe -P examples\hello.cpp -o output\hello.i
 g++ -std=c++20 output\hello.i -o output\hello.exe
 .\output\hello.exe
 
 # 示例 2
-.\build\crucibecpp-preprocessor.exe -P examples\advanced_macro.cpp -o output\advanced_macro.i
+.\build\cruciblecpp-preprocessor.exe -P examples\advanced_macro.cpp -o output\advanced_macro.i
 g++ -std=c++20 output\advanced_macro.i -o output\advanced_macro.exe
 .\output\advanced_macro.exe
 ```
@@ -39,7 +39,7 @@ g++ -std=c++20 output\advanced_macro.i -o output\advanced_macro.exe
 ## 处理自己的项目头（引号或尖括号）
 
 ```powershell
-.\build\crucibecpp-preprocessor.exe `
+.\build\cruciblecpp-preprocessor.exe `
     -P `
     -I your\include `
     -o output\your_file.i `
@@ -53,7 +53,7 @@ g++ -std=c++20 output\advanced_macro.i -o output\advanced_macro.exe
 标准库路径不自动探测。建议用 CMake 把 `CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES` 传进来；命令行则手动传：
 
 ```powershell
-.\build\crucibecpp-preprocessor.exe `
+.\build\cruciblecpp-preprocessor.exe `
     -P `
     -isystem D:/vsC++/ucrt64/include/c++/15.2.0 `
     -isystem D:/vsC++/ucrt64/include/c++/15.2.0/x86_64-w64-mingw32 `
@@ -70,7 +70,7 @@ CMake 集成示例见 `README.md` 的 “CMake 依赖图集成”。
 ## CMake 依赖文件
 
 ```powershell
-.\build\crucibecpp-preprocessor.exe `
+.\build\cruciblecpp-preprocessor.exe `
     -P `
     -I your\include `
     -MD -MF output\your_file.d -MT output\your_file.i `

@@ -1,4 +1,4 @@
-set(PREPROCESSOR $<TARGET_FILE:crucibecpp-preprocessor>)
+set(PREPROCESSOR $<TARGET_FILE:cruciblecpp-preprocessor>)
 set(TEST_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/test_include)
 if(MSVC)
     set(TEST_COMPILE_FLAGS /std:c++20 /Zs)

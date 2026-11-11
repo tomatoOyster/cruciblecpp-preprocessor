@@ -1,4 +1,4 @@
-# CrucibeCpp Preprocessor V1.0.0
+# CrucibleCpp Preprocessor V1.0.0
 
 首个公开发行版本：Windows x64 独立 C++20 预处理器，直接替代 `g++ -E` 的预处理步骤。
 
@@ -32,9 +32,9 @@
 ## 快速开始
 
 ```powershell
-.\crucibecpp-preprocessor.exe --version
+.\cruciblecpp-preprocessor.exe --version
 
-.\crucibecpp-preprocessor.exe -P `
+.\cruciblecpp-preprocessor.exe -P `
     -isystem D:/vsC++/ucrt64/include/c++/15.2.0 `
     -isystem D:/vsC++/ucrt64/include/c++/15.2.0/x86_64-w64-mingw32 `
     -isystem D:/vsC++/ucrt64/include/c++/15.2.0/backward `

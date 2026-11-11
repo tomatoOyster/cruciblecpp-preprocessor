@@ -7,7 +7,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace crucibe {
+namespace crucible {
 
 enum class TokenKind {
     Identifier,
@@ -75,4 +75,4 @@ const char* tokenKindName(TokenKind kind);
 bool tokensEquivalent(const Token& a, const Token& b);
 bool isHidden(const Token& token, std::string_view macroName);
 
-} // namespace crucibe
+} // namespace crucible

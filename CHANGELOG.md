@@ -1,5 +1,13 @@
 # Changelog
 
+## V1.0.2 — 2026-11-11
+
+### 变更
+
+- 项目名统一为 **`CrucibleCpp`**，补上此前缺失的 `l`。
+- 可执行文件、CMake 目标、namespace、仓库名、发行包名统一为 `cruciblecpp` / `crucible`。
+- 仓库地址改为 <https://github.com/tomatoOyster/cruciblecpp-preprocessor>。
+
 ## V1.0.1 — 2026-11-11
 
 ### 修复

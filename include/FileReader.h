@@ -5,7 +5,7 @@
 #include <filesystem>
 #include <memory>
 
-namespace crucibe {
+namespace crucible {
 
 class DiagnosticSink;
 
@@ -18,4 +18,4 @@ public:
                                      DiagnosticSink& diagnostics);
 };
 
-} // namespace crucibe
+} // namespace crucible

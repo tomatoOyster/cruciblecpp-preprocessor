@@ -9,7 +9,7 @@
 #include <string>
 #include <string_view>
 
-namespace crucibe {
+namespace crucible {
 namespace {
 
 bool isAsciiAlpha(char c) {
@@ -701,4 +701,4 @@ bool Tokenizer::parseHeaderName(std::string_view text, std::size_t& pos,
     return false;
 }
 
-} // namespace crucibe
+} // namespace crucible

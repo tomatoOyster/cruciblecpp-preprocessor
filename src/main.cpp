@@ -61,7 +61,7 @@ std::vector<std::string> collectArguments(int argc, char** argv) {
 }
 
 void printUsage(std::ostream& out) {
-    out << "Usage: crucibecpp-preprocessor [options] <input.cpp>\n"
+    out << "Usage: cruciblecpp-preprocessor [options] <input.cpp>\n"
            "\n"
            "Options:\n"
            "  -o, --output <file>          Write output to <file> (default: stdout)\n"
@@ -106,7 +106,7 @@ bool parseInteger(std::string_view text, int& value) {
 } // namespace
 
 int main(int argc, char** argv) {
-    crucibe::PreprocessorOptions options;
+    crucible::PreprocessorOptions options;
     const std::vector<std::string> arguments = collectArguments(argc, argv);
 
     for (std::size_t i = 1; i < arguments.size(); ++i) {
@@ -124,7 +124,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (arg == "--version") {
-            std::cout << "crucibecpp-preprocessor 1.0.1\n";
+            std::cout << "cruciblecpp-preprocessor 1.0.2\n";
             return 0;
         }
         if (arg == "-o" || arg == "--output") {
@@ -143,13 +143,13 @@ int main(int argc, char** argv) {
         }
         if (arg == "-D" || arg == "--define") {
             options.commandActions.push_back(
-                {crucibe::CommandLineAction::Kind::Define,
+                {crucible::CommandLineAction::Kind::Define,
                  nextValue(arg.c_str())});
             continue;
         }
         if (arg == "-U" || arg == "--undef") {
             options.commandActions.push_back(
-                {crucibe::CommandLineAction::Kind::Undef,
+                {crucible::CommandLineAction::Kind::Undef,
                  nextValue(arg.c_str())});
             continue;
         }
@@ -232,12 +232,12 @@ int main(int argc, char** argv) {
         }
         if (arg.size() > 2 && arg.rfind("-D", 0) == 0) {
             options.commandActions.push_back(
-                {crucibe::CommandLineAction::Kind::Define, arg.substr(2)});
+                {crucible::CommandLineAction::Kind::Define, arg.substr(2)});
             continue;
         }
         if (arg.size() > 2 && arg.rfind("-U", 0) == 0) {
             options.commandActions.push_back(
-                {crucibe::CommandLineAction::Kind::Undef, arg.substr(2)});
+                {crucible::CommandLineAction::Kind::Undef, arg.substr(2)});
             continue;
         }
         if (arg.size() > 2 && arg.rfind("-I", 0) == 0) {
@@ -289,6 +289,6 @@ int main(int argc, char** argv) {
         options.output.clear();
     }
 
-    crucibe::Preprocessor preprocessor(std::move(options));
+    crucible::Preprocessor preprocessor(std::move(options));
     return preprocessor.run();
 }

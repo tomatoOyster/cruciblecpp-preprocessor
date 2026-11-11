@@ -10,7 +10,7 @@
 #include <unordered_set>
 #include <utility>
 
-namespace crucibe {
+namespace crucible {
 namespace {
 
 bool hasNonTrivia(const std::vector<Token>& tokens) {
@@ -560,4 +560,4 @@ std::vector<Token> MacroExpander::expand(const std::vector<Token>& input) {
     return out;
 }
 
-} // namespace crucibe
+} // namespace crucible

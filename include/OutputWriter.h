@@ -5,7 +5,7 @@
 #include <string>
 #include <string_view>
 
-namespace crucibe {
+namespace crucible {
 
 class OutputWriter {
 public:
@@ -29,4 +29,4 @@ private:
     bool atLineStart_ = true;
 };
 
-} // namespace crucibe
+} // namespace crucible

@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <unordered_set>
 
-namespace crucibe {
+namespace crucible {
 namespace {
 
 bool isParameter(const MacroDefinition& macro, std::string_view name) {
@@ -208,4 +208,4 @@ void MacroRegistry::popMacro(std::string_view name, DiagnosticSink& diagnostics)
     }
 }
 
-} // namespace crucibe
+} // namespace crucible

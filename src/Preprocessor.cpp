@@ -25,7 +25,7 @@
 #include <unordered_set>
 #include <utility>
 
-namespace crucibe {
+namespace crucible {
 namespace {
 
 // Generated from:
@@ -720,7 +720,7 @@ int Preprocessor::run() {
         return 2;
     }
     if (options_.verbose) {
-        std::cerr << "crucibecpp: processed " << filesProcessed_
+        std::cerr << "cruciblecpp: processed " << filesProcessed_
                   << " file(s), " << diagnostics_.errorCount()
                   << " error(s)\n";
     }
@@ -1877,4 +1877,4 @@ bool Preprocessor::writeOutput() {
     return true;
 }
 
-} // namespace crucibe
+} // namespace crucible

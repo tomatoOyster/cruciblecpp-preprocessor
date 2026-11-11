@@ -7,7 +7,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace crucibe {
+namespace crucible {
 
 class IncludeHandler {
 public:
@@ -41,4 +41,4 @@ private:
     std::unordered_set<std::string> onceFiles_;
 };
 
-} // namespace crucibe
+} // namespace crucible

@@ -1,6 +1,6 @@
 # Windows UCRT64 GCC 15.2 预处理器：目标、现状与剩余差距
 
-> 当前工程：[crucibecpp-preprocessor/](crucibecpp-preprocessor/)  
+> 当前工程：[cruciblecpp-preprocessor/](cruciblecpp-preprocessor/)  
 > 兼容矩阵：**Windows x64 + MinGW-w64 UCRT64 + GCC 15.2.0 + C++20**
 
 ---

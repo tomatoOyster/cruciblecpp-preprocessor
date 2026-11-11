@@ -1,6 +1,6 @@
 #include "Token.h"
 
-namespace crucibe {
+namespace crucible {
 
 const char* tokenKindName(TokenKind kind) {
     switch (kind) {
@@ -39,4 +39,4 @@ bool isHidden(const Token& token, std::string_view macroName) {
     return token.hideSet->find(std::string(macroName)) != token.hideSet->end();
 }
 
-} // namespace crucibe
+} // namespace crucible

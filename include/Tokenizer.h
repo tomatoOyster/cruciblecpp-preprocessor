@@ -7,7 +7,7 @@
 #include <string_view>
 #include <vector>
 
-namespace crucibe {
+namespace crucible {
 
 class DiagnosticSink;
 
@@ -28,4 +28,4 @@ public:
                                 std::string& name, bool& angled);
 };
 
-} // namespace crucibe
+} // namespace crucible

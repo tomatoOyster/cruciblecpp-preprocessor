@@ -6,7 +6,7 @@
 #include <string_view>
 #include <vector>
 
-namespace crucibe {
+namespace crucible {
 
 class DiagnosticSink;
 
@@ -56,4 +56,4 @@ private:
     std::vector<Frame> stack_;
 };
 
-} // namespace crucibe
+} // namespace crucible

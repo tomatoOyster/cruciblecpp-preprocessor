@@ -11,7 +11,7 @@
 #include <string_view>
 #include <utility>
 
-namespace crucibe {
+namespace crucible {
 namespace {
 
 Token makeToken(TokenKind kind, std::string text, const SourceLocation& loc) {
@@ -231,4 +231,4 @@ int SpecialOperator::hasCppAttributeValue(std::string_view name) {
     return 0;
 }
 
-} // namespace crucibe
+} // namespace crucible

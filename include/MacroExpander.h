@@ -9,7 +9,7 @@
 #include <optional>
 #include <vector>
 
-namespace crucibe {
+namespace crucible {
 
 class DiagnosticSink;
 class SpecialOperator;
@@ -67,4 +67,4 @@ private:
     static constexpr std::size_t kMaxExpansionSteps = 1000000;
 };
 
-} // namespace crucibe
+} // namespace crucible

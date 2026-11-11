@@ -4,7 +4,7 @@
 #include <cctype>
 #include <system_error>
 
-namespace crucibe {
+namespace crucible {
 namespace {
 
 std::filesystem::path pathFromUtf8(std::string_view name) {
@@ -126,4 +126,4 @@ bool IncludeHandler::isOnce(const std::filesystem::path& path) const {
     return onceFiles_.find(canonicalKey(path)) != onceFiles_.end();
 }
 
-} // namespace crucibe
+} // namespace crucible

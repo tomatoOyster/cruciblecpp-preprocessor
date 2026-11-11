@@ -10,7 +10,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace crucibe {
+namespace crucible {
 
 class ConditionalEngine;
 class IncludeHandler;
@@ -159,4 +159,4 @@ private:
     std::unordered_set<std::string> dependencyKeys_;
 };
 
-} // namespace crucibe
+} // namespace crucible

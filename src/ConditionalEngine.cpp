@@ -8,7 +8,7 @@
 #include <string_view>
 #include <vector>
 
-namespace crucibe {
+namespace crucible {
 namespace {
 
 struct PPValue {
@@ -859,4 +859,4 @@ bool ConditionalEngine::evaluateExpression(
     return parser.evaluate();
 }
 
-} // namespace crucibe
+} // namespace crucible

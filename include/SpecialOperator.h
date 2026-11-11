@@ -7,7 +7,7 @@
 #include <string_view>
 #include <vector>
 
-namespace crucibe {
+namespace crucible {
 
 class DiagnosticSink;
 
@@ -43,4 +43,4 @@ private:
     std::string time_;
 };
 
-} // namespace crucibe
+} // namespace crucible

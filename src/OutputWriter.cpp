@@ -2,7 +2,7 @@
 
 #include <sstream>
 
-namespace crucibe {
+namespace crucible {
 
 OutputWriter::OutputWriter(bool lineMarkers) : lineMarkers_(lineMarkers) {}
 
@@ -89,4 +89,4 @@ void OutputWriter::clear() {
     atLineStart_ = true;
 }
 
-} // namespace crucibe
+} // namespace crucible

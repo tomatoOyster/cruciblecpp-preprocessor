@@ -1,7 +1,7 @@
-# CrucibeCpp Preprocessor
+# CrucibleCpp Preprocessor
 
-> **V1.0.1** — Windows x64 独立 C++ 预处理器，直接替代 `g++ -E` 的预处理步骤。  
-> [下载 V1.0.1](https://github.com/tomatoOyster/crucibecpp-preprocessor/releases/latest) · [Release Notes](RELEASE_NOTES_v1.0.1.md)
+> **V1.0.2** — Windows x64 独立 C++ 预处理器，直接替代 `g++ -E` 的预处理步骤。  
+> [下载 V1.0.2](https://github.com/tomatoOyster/cruciblecpp-preprocessor/releases/latest) · [Release Notes](RELEASE_NOTES_v1.0.2.md)
 
 一个用 C++20 实现的独立 C++ 预处理器，兼容矩阵锁定为：
 
@@ -84,7 +84,7 @@
 ## 目录结构
 
 ```text
-crucibecpp-preprocessor/
+cruciblecpp-preprocessor/
 ├── README.md
 ├── CMakeLists.txt
 ├── Makefile
@@ -166,7 +166,7 @@ g++ -std=c++20 -Wall -Wextra -Iinclude `
     src/ConditionalEngine.cpp src/IncludeHandler.cpp `
     src/SpecialOperator.cpp src/OutputWriter.cpp `
     src/Preprocessor.cpp src/main.cpp `
-    -lshell32 -o crucibecpp-preprocessor.exe
+    -lshell32 -o cruciblecpp-preprocessor.exe
 ```
 
 `-lshell32` 仅 Windows 需要，用于读取 Unicode 命令行参数。
@@ -203,16 +203,16 @@ make test
 
 ```powershell
 # 输出到 stdout（默认带行标记）
-.\build\crucibecpp-preprocessor.exe examples\hello.cpp
+.\build\cruciblecpp-preprocessor.exe examples\hello.cpp
 
 # 输出到文件
-.\build\crucibecpp-preprocessor.exe -P examples\hello.cpp -o output\hello.i
+.\build\cruciblecpp-preprocessor.exe -P examples\hello.cpp -o output\hello.i
 
 # 添加 include 目录、定义宏
-.\build\crucibecpp-preprocessor.exe -I include -DDEBUG=1 input.cpp -o output\input.i
+.\build\cruciblecpp-preprocessor.exe -I include -DDEBUG=1 input.cpp -o output\input.i
 
 # 保留注释、关闭行标记
-.\build\crucibecpp-preprocessor.exe -C -P input.cpp -o output\input.i
+.\build\cruciblecpp-preprocessor.exe -C -P input.cpp -o output\input.i
 ```
 
 编译输出的示例：
@@ -252,7 +252,7 @@ g++ -std=c++20 -fsyntax-only output\hello.i
 `-D` 也支持函数宏：
 
 ```powershell
-.\build\crucibecpp-preprocessor.exe -D "F(x)=x+1" input.cpp
+.\build\cruciblecpp-preprocessor.exe -D "F(x)=x+1" input.cpp
 ```
 
 `-D` / `-U` 按出现顺序应用。例如：
@@ -270,7 +270,7 @@ CMake 集成会通过 `CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES` 把 GCC 的 C++/C
 直接命令行使用时必须手动传这些目录，例如：
 
 ```powershell
-.\build\crucibecpp-preprocessor.exe -P `
+.\build\cruciblecpp-preprocessor.exe -P `
     -isystem D:/vsC++/ucrt64/include/c++/15.2.0 `
     -isystem D:/vsC++/ucrt64/include/c++/15.2.0/x86_64-w64-mingw32 `
     -isystem D:/vsC++/ucrt64/include/c++/15.2.0/backward `
@@ -302,7 +302,7 @@ endforeach()
 
 add_custom_command(
     OUTPUT  ${CMAKE_CURRENT_BINARY_DIR}/main.i
-    COMMAND crucibecpp-preprocessor
+    COMMAND cruciblecpp-preprocessor
             -I ${CMAKE_CURRENT_SOURCE_DIR}/include
             ${CPP_PRE_INCLUDES}
             -MD -MF ${CMAKE_CURRENT_BINARY_DIR}/main.i.d
@@ -411,7 +411,7 @@ MIT，见 [LICENSE](LICENSE)。发行说明见 [CHANGELOG.md](CHANGELOG.md)。
 ## 示例
 
 ```powershell
-.\build\crucibecpp-preprocessor.exe -P examples\advanced_macro.cpp -o output\advanced_macro.i
+.\build\cruciblecpp-preprocessor.exe -P examples\advanced_macro.cpp -o output\advanced_macro.i
 g++ -std=c++20 output\advanced_macro.i -o output\advanced_macro.exe
 .\output\advanced_macro.exe
 ```

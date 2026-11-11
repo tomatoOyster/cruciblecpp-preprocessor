@@ -8,7 +8,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace crucibe {
+namespace crucible {
 
 class DiagnosticSink;
 
@@ -46,4 +46,4 @@ private:
                        std::vector<std::optional<MacroDefinition>>> pushed_;
 };
 
-} // namespace crucibe
+} // namespace crucible

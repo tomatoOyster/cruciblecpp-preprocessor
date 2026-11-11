@@ -6,7 +6,7 @@
 #include <sstream>
 #include <string_view>
 
-namespace crucibe {
+namespace crucible {
 namespace {
 
 std::string pathToUtf8(const std::filesystem::path& path) {
@@ -160,4 +160,4 @@ std::shared_ptr<SourceFile> FileReader::read(const std::filesystem::path& path,
     return file;
 }
 
-} // namespace crucibe
+} // namespace crucible
