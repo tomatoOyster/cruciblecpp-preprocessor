@@ -10,6 +10,18 @@
 
 它读取一个源文件，完成翻译阶段 1–4（文件读取、续行、预处理 token 化、预处理指令与宏展开），输出可交给该 GCC 继续编译的 `.i` 文本。
 
+## 官方 VS Code 插件
+
+官方插件：**[CrucibleCpp for VS Code](https://github.com/tomatoOyster/cruciblecpp-vscode)**
+
+- 下载 VSIX：[GitHub Releases](https://github.com/tomatoOyster/cruciblecpp-vscode/releases/latest)
+- 功能：预处理当前文件、只读 `.i` 预览、Problems 诊断、保存 `.i`、与 `g++ -E` diff、读取 `compile_commands.json`、查看 GCC include 路径。
+- 安装：从 Release 下载 `.vsix` 后执行
+  ```powershell
+  code --install-extension path\to\cruciblecpp-vscode-0.1.0.vsix
+  ```
+- 插件需要本仓库构建的 `cruciblecpp-preprocessor.exe`；如果不在工作区 `build`/`bin` 中，在 VS Code 设置里配置 `cruciblecpp.executable`。
+
 **范围声明：**
 
 - 支持 `#include "..."` 和 `#include <...>`。
