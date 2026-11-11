@@ -6,7 +6,7 @@
 build\crucibecpp-preprocessor.exe
 ```
 
-这是 Windows x64 静态链接版本（不需要额外 MinGW DLL），版本 `1.0.0`，目标为 **MinGW-w64 UCRT64 GCC 15.2.0 + C++20**。
+这是 Windows x64 静态链接版本（不需要额外 MinGW DLL），版本 `1.0.1`，目标为 **MinGW-w64 UCRT64 GCC 15.2.0 + C++20**。
 
 ## 先跑两个示例
 

@@ -1,7 +1,7 @@
 # CrucibeCpp Preprocessor
 
-> **V1.0.0** — 首个公开发行版本。Windows x64 独立 C++ 预处理器，直接替代 `g++ -E` 的预处理步骤。  
-> [下载 V1.0.0](https://github.com/tomatoOyster/crucibecpp-preprocessor/releases/latest) · [Release Notes](RELEASE_NOTES_v1.0.0.md)
+> **V1.0.1** — Windows x64 独立 C++ 预处理器，直接替代 `g++ -E` 的预处理步骤。  
+> [下载 V1.0.1](https://github.com/tomatoOyster/crucibecpp-preprocessor/releases/latest) · [Release Notes](RELEASE_NOTES_v1.0.1.md)
 
 一个用 C++20 实现的独立 C++ 预处理器，兼容矩阵锁定为：
 

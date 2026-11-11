@@ -841,9 +841,16 @@ void Preprocessor::processTokenStream(std::shared_ptr<SourceFile> file) {
         }
     };
 
+    // Do not emit a blank output line for every source line. With line
+    // markers enabled, emit a marker before each text chunk so diagnostics
+    // stay exact. With -P the output is deliberately compact as well.
+    const bool compactGaps = true;
+
     for (std::size_t i = 0; i < lines.size();) {
         if (lines[i].empty()) {
-            writer_->writeNewline();
+            if (!compactGaps) {
+                writer_->writeNewline();
+            }
             ++i;
             continue;
         }
@@ -855,7 +862,7 @@ void Preprocessor::processTokenStream(std::shared_ptr<SourceFile> file) {
             adjustLine(line, i);
             bool wrote = false;
             processDirective(line, i, wrote);
-            if (!wrote) {
+            if (!wrote && !compactGaps) {
                 writer_->writeNewline();
             }
             ++i;
@@ -863,18 +870,32 @@ void Preprocessor::processTokenStream(std::shared_ptr<SourceFile> file) {
         }
 
         if (!conditionals_->active()) {
-            writer_->writeNewline();
+            if (!compactGaps) {
+                writer_->writeNewline();
+            }
             ++i;
             continue;
         }
 
         std::size_t j = i;
         std::vector<Token> chunk;
+        int parenDepth = 0;
         while (j < lines.size()) {
             if (isDirectiveLine(lines[j])) {
                 break;
             }
+            // A top-level blank line can be omitted; the next chunk starts
+            // with an explicit line marker. Keep blanks inside an unfinished
+            // macro argument so a multi-line invocation is not split.
+            if (lines[j].empty() && parenDepth == 0) {
+                break;
+            }
             for (const auto& token : lines[j]) {
+                if (token.isPunct("(")) {
+                    ++parenDepth;
+                } else if (token.isPunct(")") && parenDepth > 0) {
+                    --parenDepth;
+                }
                 chunk.push_back(token);
             }
             if (!chunk.empty()) {
@@ -899,6 +920,16 @@ void Preprocessor::processTokenStream(std::shared_ptr<SourceFile> file) {
 
         adjustLine(chunk, i);
         const std::vector<Token> expanded = expandTokens(chunk);
+        if (compactGaps && !expanded.empty()) {
+            const Token& first = expanded.front();
+            if (first.kind != TokenKind::Newline) {
+                writer_->writeLineMarker(
+                    first.loc.line,
+                    first.loc.presumedFile.empty()
+                        ? currentPresumedFile_
+                        : first.loc.presumedFile);
+            }
+        }
         handleTextTokens(expanded);
         writer_->ensureNewline();
         i = j;

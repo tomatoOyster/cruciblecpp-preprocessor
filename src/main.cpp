@@ -124,7 +124,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (arg == "--version") {
-            std::cout << "crucibecpp-preprocessor 1.0.0\n";
+            std::cout << "crucibecpp-preprocessor 1.0.1\n";
             return 0;
         }
         if (arg == "-o" || arg == "--output") {
