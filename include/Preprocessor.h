@@ -1,6 +1,7 @@
 #pragma once
 
 #include "MacroExpander.h"
+#include "PchCache.h"
 #include "Token.h"
 
 #include <cstdint>
@@ -107,6 +108,15 @@ struct PreprocessorOptions {
     // GCC .gch files are never parsed. This controls diagnostics only.
     PchPolicy pchPolicy = PchPolicy::Ignore;
 
+    // Optional PCH artifact cache. Empty directory disables it.
+    std::filesystem::path pchCacheDir;
+    std::filesystem::path pchCacheStatsFile;
+    std::size_t pchCacheMaxEntries = 256;
+    std::uintmax_t pchCacheMaxBytes = 512ULL * 1024 * 1024;
+    int pchCacheMaxAgeDays = 30;
+    int pchCacheLockTimeoutMs = 10000;
+    bool pchCacheCleanup = false;
+
     // Optional JSON analysis output for GUI/front-end tooling.
     std::filesystem::path analysisFile;
 };
@@ -164,6 +174,9 @@ private:
     std::unique_ptr<IncludeHandler> includes_;
     std::unique_ptr<SpecialOperator> special_;
     std::unique_ptr<OutputWriter> writer_;
+    std::unique_ptr<PchCache> pchCache_;
+    std::string compilerPath_;
+    std::string compilerVersion_;
 
     std::shared_ptr<SourceFile> currentFile_;
     std::filesystem::path currentPath_;

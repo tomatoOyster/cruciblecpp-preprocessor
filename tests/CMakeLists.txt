@@ -58,6 +58,19 @@ add_test(NAME pch_policy
             -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/pch
             -DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
             -P ${CMAKE_CURRENT_SOURCE_DIR}/test_pch.cmake)
+
+add_executable(pch_corrupt_helper pch_corrupt_helper.cpp)
+if(WIN32)
+    target_link_libraries(pch_corrupt_helper PRIVATE shell32)
+endif()
+add_test(NAME pch_cache
+    COMMAND ${CMAKE_COMMAND}
+            -DPREPROCESSOR=$<TARGET_FILE:cruciblecpp-preprocessor>
+            -DCXX=${CMAKE_CXX_COMPILER}
+            -DCORRUPT_HELPER=$<TARGET_FILE:pch_corrupt_helper>
+            -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/pch
+            -DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/test_pch_cache.cmake)
 add_compile_case(angle_header_name test_angle_header_name.cpp
                  -I ${CMAKE_CURRENT_SOURCE_DIR})
 

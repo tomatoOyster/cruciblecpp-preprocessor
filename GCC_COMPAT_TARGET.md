@@ -273,7 +273,7 @@
 
 - 标准库头可以预处理并编译；
 - `<>` 搜索、`__has_*`、system_header、depfile 都已打通；
-- 54 个 CTest 通过；
+- 55 个 CTest 通过；
 - CMake + Ninja 的标准头项目实测通过；
 - 不传 `-isystem` 的自动发现标准头测试通过。
 

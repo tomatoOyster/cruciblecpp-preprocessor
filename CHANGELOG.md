@@ -1,5 +1,18 @@
 # Changelog
 
+## V2.4.0 — 2026-11-12
+
+### 新增
+
+- PCH 产物缓存：`--pch-cache <dir>`，包含 artifact、manifest、depfile、选项 stamp、快照和统计目录。
+- 基于头文件/`.gch`/快照内容哈希、编译器身份、编译选项和工具版本的缓存失效。
+- 头文件新于 PCH、选项变化、编译器变化、空文件、错误 GCC PCH magic、内容/快照损坏检测。
+- 目录锁并发控制、锁超时、陈旧锁回收。
+- 原子写入、manifest 可复现、LRU/容量/天数清理和孤儿文件清理。
+- 每次运行的 hit/miss/stale/corrupt/evicted/lock/bytes/hitRate 统计 JSON。
+- PCH Make 依赖文件：PCH 依赖头文件、编译器、选项 stamp 和 manifest。
+- CTest 增加到 55 个，新增缓存命中、失效、损坏、锁、清理、可复现和依赖测试。
+
 ## V2.3.0 — 2026-11-12
 
 ### 新增

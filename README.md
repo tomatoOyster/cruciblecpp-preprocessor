@@ -1,8 +1,8 @@
 # CrucibleCpp Preprocessor
 
-> **V2.3.0** — Windows x64 独立 C++ 预处理器，自动发现 PATH 中的 GCC 头文件目录，直接替代 `g++ -E` 的预处理步骤。
+> **V2.4.0** — Windows x64 独立 C++ 预处理器，自动发现 PATH 中的 GCC 头文件目录，直接替代 `g++ -E` 的预处理步骤。
 >
-> [下载 V2.3.0](https://github.com/tomatoOyster/cruciblecpp-preprocessor/releases/latest) · [Changelog](CHANGELOG.md)
+> [下载 V2.4.0](https://github.com/tomatoOyster/cruciblecpp-preprocessor/releases/latest) · [Changelog](CHANGELOG.md)
 
 一个用 C++20 实现的独立 C++ 预处理器，兼容矩阵锁定为：
 
@@ -43,6 +43,58 @@ PCH 诊断策略：
 ```
 
 构建系统传入的 `-Winvalid-pch` / `-Wno-invalid-pch` 会作为兼容参数接受。
+
+### PCH 缓存管理
+
+通过 `--pch-cache <dir>` 启用。缓存目录是真正的产物目录：
+
+```text
+<dir>/
+  artifacts/<key>.gch      PCH 快照
+  manifests/<key>.meta     依赖、哈希、编译器/选项签名
+  deps/<key>.d             Make 依赖文件
+  stamps/<key>.options     编译选项戳
+  locks/<key>.lock/        并发锁
+  tmp/                     原子写入临时文件
+```
+
+缓存行为：
+
+- 同一 PCH 首次登记为 miss，之后命中为 hit。
+- 缓存键由头文件和 `.gch` 路径生成；manifest 记录：
+  - 头文件内容哈希、大小、mtime
+  - `.gch` 内容哈希、大小、mtime
+  - 编译器路径、版本、大小、mtime
+  - 预处理选项哈希
+  - 工具版本
+  - 快照哈希
+- 头文件更新、编译器变化、选项变化、工具版本变化都会使条目失效。
+- 头文件比 `.gch` 新时报告 stale。
+- 空文件、错误 GCC PCH magic、GCC PCH 内容哈希不匹配、快照损坏都会报告 corrupt。
+- 每个缓存键使用目录锁，支持多进程并发；超时可配置。
+- manifest、快照和依赖文件使用临时文件 + rename 原子写入。
+- 同一输入和选项重复构建会产生相同 manifest；缓存快照就是原始 `.gch` 字节。
+- 每次运行输出 hit/miss/stale/corrupt/evicted/lock/bytes/hitRate 统计。
+- 清理策略支持最大条目数、最大字节数、最大天数；正常结束也会执行清理。
+- 生成的 `.d` 依赖包含：
+  - `pch.h`
+  - 编译器可执行文件
+  - 选项 stamp
+  - manifest
+
+CLI：
+
+```text
+--pch-cache <dir>
+--pch-cache-stats <file>
+--pch-cache-max-entries <n>
+--pch-cache-max-size <bytes>
+--pch-cache-max-age <days>
+--pch-cache-lock-timeout <ms>
+--pch-cache-gc
+```
+
+缓存不会让预处理器直接读取 GCC PCH；它管理并验证外部生成的 `.gch`，为构建系统提供依赖、失效、统计和并发安全。
 
 **范围声明：**
 
@@ -288,6 +340,13 @@ g++ -std=c++20 -fsyntax-only output\hello.i
 --analysis-json <file>       输出 include 边和宏展开 trace 的 JSON
 --pch=ignore|warn|error|report
                              PCH 策略（默认 ignore）
+--pch-cache <dir>            启用 PCH 产物缓存
+--pch-cache-stats <file>     输出缓存命中率 JSON
+--pch-cache-max-entries <n>  最大缓存条目数（默认 256）
+--pch-cache-max-size <bytes> 最大缓存字节数（默认 512 MiB）
+--pch-cache-max-age <days>   最大缓存天数（默认 30）
+--pch-cache-lock-timeout <ms> 并发锁等待超时（默认 10000）
+--pch-cache-gc               强制清理
 -MD, -MMD                    生成 CMake/Ninja depfile
 -MF <file>                   依赖文件路径
 -MT <target>                 依赖目标
@@ -461,7 +520,7 @@ CAT(, x)                  // x
 
 ## 测试
 
-当前包含 **54 个 CTest 用例**（正例会预处理后再用 GCC 编译，负例验证退出码）。
+当前包含 **55 个 CTest 用例**（正例会预处理后再用 GCC 编译，负例验证退出码）。
 
 测试覆盖：
 

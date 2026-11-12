@@ -581,6 +581,8 @@ Preprocessor::Preprocessor(PreprocessorOptions options)
     if (options_.autoGccIncludes) {
         const GccDiscovery discovery = discoverGccFromPath();
         if (discovery.found) {
+            compilerPath_ = pathToUtf8(discovery.compiler);
+            compilerVersion_ = discovery.version;
             if (options_.verbose) {
                 std::cerr << "cruciblecpp: GCC";
                 if (!discovery.version.empty()) {
@@ -709,6 +711,37 @@ Preprocessor::Preprocessor(PreprocessorOptions options)
             }
             macroTrace_[found->second].steps.push_back(step);
         });
+
+    if (!options_.pchCacheDir.empty()) {
+        PchCacheOptions cacheOptions;
+        cacheOptions.directory = options_.pchCacheDir;
+        cacheOptions.statsFile = options_.pchCacheStatsFile;
+        cacheOptions.maxEntries = options_.pchCacheMaxEntries;
+        cacheOptions.maxBytes = options_.pchCacheMaxBytes;
+        cacheOptions.maxAgeDays = options_.pchCacheMaxAgeDays;
+        cacheOptions.lockTimeoutMs = options_.pchCacheLockTimeoutMs;
+        cacheOptions.cleanup = options_.pchCacheCleanup;
+        cacheOptions.verbose = options_.verbose;
+        PchCacheContext context;
+        context.compiler = pathFromUtf8(compilerPath_);
+        context.compilerVersion = compilerVersion_;
+        context.toolVersion = "2.4.0";
+        context.standard = options_.standard;
+        context.inputCharset = options_.inputCharset;
+        context.executionCharset = options_.executionCharset;
+        context.unsignedChar = options_.unsignedChar;
+        context.includeDirs = options_.includeDirs;
+        context.systemDirs = options_.systemDirs;
+        context.forcedIncludes = options_.forcedIncludes;
+        for (const auto& action : options_.commandActions) {
+            context.commandActions.push_back(
+                (action.kind == CommandLineAction::Kind::Define ? "D:"
+                                                                : "U:") +
+                action.text);
+        }
+        pchCache_ = std::make_unique<PchCache>(std::move(cacheOptions),
+                                               std::move(context));
+    }
 }
 
 Preprocessor::~Preprocessor() = default;
@@ -1535,6 +1568,12 @@ bool Preprocessor::checkPrecompiledHeader(
                   : options_.pchPolicy == PchPolicy::Report ? "report"
                                                             : "ignore";
     const std::string pchText = pathToUtf8(pch);
+    if (pchCache_) {
+        const PchCacheResult cached = pchCache_->observe(header, pch);
+        if (cached.status == PchCacheStatus::Error) {
+            diagnostics_.note(loc, "PCH cache: " + cached.detail);
+        }
+    }
     if (options_.pchPolicy != PchPolicy::Ignore) {
         PchRecord record;
         record.includeName = std::string(includeName);

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <cstdlib>
 #include <ctime>
 #include <filesystem>
@@ -131,6 +132,13 @@ void printUsage(std::ostream& out) {
            "  --analysis-json <file>       Write include edges and macro trace JSON\n"
            "  --pch=ignore|warn|error|report\n"
            "                               Precompiled-header policy (default: ignore)\n"
+           "  --pch-cache <dir>             Enable the PCH artifact cache\n"
+           "  --pch-cache-stats <file>      Write per-run cache hit-rate JSON\n"
+           "  --pch-cache-max-entries <n>   Maximum cached PCH entries (default: 256)\n"
+           "  --pch-cache-max-size <bytes>  Maximum cache bytes (default: 512 MiB)\n"
+           "  --pch-cache-max-age <days>    Evict entries older than N days (default: 30)\n"
+           "  --pch-cache-lock-timeout <ms> Lock wait timeout (default: 10000)\n"
+           "  --pch-cache-gc                Force cleanup (normal runs also enforce limits)\n"
            "  -MD, -MMD                    Generate a CMake/Ninja depfile\n"
            "  -MF <file>                   Dependency file path\n"
            "  -MT <target>                 Dependency target\n"
@@ -146,6 +154,21 @@ void printUsage(std::ostream& out) {
            "  -newyear                     Print days until next January 1 and exit\n"
            "  --help                       Show this help\n"
            "  --version                    Show version\n";
+}
+
+bool parseUnsigned(std::string_view text, std::uintmax_t& value) {
+    try {
+        std::size_t consumed = 0;
+        const unsigned long long parsed =
+            std::stoull(std::string(text), &consumed);
+        if (consumed != text.size()) {
+            return false;
+        }
+        value = parsed;
+        return true;
+    } catch (...) {
+        return false;
+    }
 }
 
 bool parseInteger(std::string_view text, int& value) {
@@ -193,7 +216,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (arg == "--version") {
-            std::cout << "cruciblecpp-preprocessor 2.3.0\n";
+            std::cout << "cruciblecpp-preprocessor 2.4.0\n";
             return 0;
         }
         if (arg == "-o" || arg == "--output") {
@@ -285,6 +308,55 @@ int main(int argc, char** argv) {
                 std::cerr << "error: --pch expects ignore, warn, error, or report\n";
                 return 2;
             }
+            continue;
+        }
+        if (arg == "--pch-cache") {
+            options.pchCacheDir = pathFromUtf8(nextValue(arg.c_str()));
+            continue;
+        }
+        if (arg == "--pch-cache-stats") {
+            options.pchCacheStatsFile =
+                pathFromUtf8(nextValue(arg.c_str()));
+            continue;
+        }
+        if (arg == "--pch-cache-max-entries") {
+            int value = 0;
+            if (!parseInteger(nextValue(arg.c_str()), value) || value <= 0) {
+                std::cerr << "error: --pch-cache-max-entries expects a positive integer\n";
+                return 2;
+            }
+            options.pchCacheMaxEntries = static_cast<std::size_t>(value);
+            continue;
+        }
+        if (arg == "--pch-cache-max-size") {
+            std::uintmax_t value = 0;
+            if (!parseUnsigned(nextValue(arg.c_str()), value) || value == 0) {
+                std::cerr << "error: --pch-cache-max-size expects a positive byte count\n";
+                return 2;
+            }
+            options.pchCacheMaxBytes = value;
+            continue;
+        }
+        if (arg == "--pch-cache-max-age") {
+            int value = 0;
+            if (!parseInteger(nextValue(arg.c_str()), value) || value < 0) {
+                std::cerr << "error: --pch-cache-max-age expects a non-negative day count\n";
+                return 2;
+            }
+            options.pchCacheMaxAgeDays = value;
+            continue;
+        }
+        if (arg == "--pch-cache-lock-timeout") {
+            int value = 0;
+            if (!parseInteger(nextValue(arg.c_str()), value) || value <= 0) {
+                std::cerr << "error: --pch-cache-lock-timeout expects a positive millisecond count\n";
+                return 2;
+            }
+            options.pchCacheLockTimeoutMs = value;
+            continue;
+        }
+        if (arg == "--pch-cache-gc") {
+            options.pchCacheCleanup = true;
             continue;
         }
         if (arg == "-Winvalid-pch" || arg == "-Wno-invalid-pch") {
