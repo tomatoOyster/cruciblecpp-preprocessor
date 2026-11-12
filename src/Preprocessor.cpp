@@ -1369,10 +1369,24 @@ bool Preprocessor::handlePragmaText(std::string_view text,
 
     if (trimmed.rfind("GCC dependency", 0) == 0) {
         if (auto argument = extractQuotedArgument(trimmed)) {
-            std::filesystem::path dependency = pathFromUtf8(*argument);
-            if (!isRegularFile(dependency)) {
+            const std::filesystem::path requested = pathFromUtf8(*argument);
+            std::filesystem::path dependency = requested;
+            if (!requested.is_absolute() && !isRegularFile(dependency)) {
+                std::vector<std::filesystem::path> search;
                 if (!currentPath_.empty()) {
-                    dependency = currentPath_.parent_path() / dependency;
+                    search.push_back(currentPath_.parent_path());
+                }
+                search.insert(search.end(), options_.includeDirs.begin(),
+                              options_.includeDirs.end());
+                search.insert(search.end(), options_.systemDirs.begin(),
+                              options_.systemDirs.end());
+                for (const auto& directory : search) {
+                    const std::filesystem::path candidate =
+                        directory / requested;
+                    if (isRegularFile(candidate)) {
+                        dependency = candidate;
+                        break;
+                    }
                 }
             }
             if (!isRegularFile(dependency)) {
