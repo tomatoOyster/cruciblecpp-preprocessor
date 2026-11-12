@@ -549,7 +549,7 @@ CAT(, x)                  // x
 - 硬编码 GCC 15.2（C++20）宏 profile；换 GCC 版本或标准需要重新生成 profile。
 - 不提供 `__has_*` 的完整 GCC 表；只覆盖常用 builtin/attribute 集合。
 - 不实现 trigraph（C++17 已移除）。
-- 不支持预编译头（PCH）。
+- 不解析 GCC 二进制 PCH 格式；支持 `.gch` 的 ignore/warn/error/report 策略和外部 PCH artifact 缓存。`g++ -E` 本身不使用 PCH。
 - 未知 pragma 默认透传；未知指令默认 warning + 透传，`--strict` 时作为 error。
 - include guard 通过正常 `#ifndef` 语义处理，未做“检测 guard 后跳过整个文件”的性能优化。
 - 字符常量按 GCC 15.2 / Windows x64 实现：普通字符使用所选执行字符集，`wchar_t` 为 16 位。

@@ -89,4 +89,4 @@ g++ -std=c++20 output\advanced_macro.i -o output\advanced_macro.exe
 - 需要 `PATH` 中能找到 GCC；找不到时需手动传 `-isystem`。
 - 硬编码 GCC 15.2 profile；换 GCC 版本、MSVCRT、32 位或 C++ 标准需要重新生成/调整 profile。
 - 尖括号 header name 支持 `/` 和直接反斜杠路径；注释夹在 `#include` 与 header name 之间属于边界情况。
-- 当前未实现 PCH、modules、`#embed`。
+- 支持 PCH 策略和外部 `.gch` 缓存，但不解析 GCC 二进制 PCH；modules、`#embed` 未实现。

@@ -24,7 +24,8 @@
 - MSVC/Clang；
 - MSVCRT 版 MinGW、32 位 GCC；
 - 其他 GCC 小版本；
-- PCH、modules、`#embed`；
+- GCC PCH 二进制格式的解析/直接消费；PCH 的 `ignore/warn/error/report` 策略和外部 `.gch` artifact 缓存已支持；
+- modules、`#embed`；
 - 任意 sysroot；自动发现只针对 `PATH` 里的 GCC。
 
 ---
@@ -44,11 +45,13 @@
 | pragma | `once`、`push/pop`、`message`、`system_header`、未知透传 | 70%–80% |
 | 标准库头 | `<vector>`、`<string>`、`<iostream>`、`<filesystem>`、`<chrono>` 等已验证 | 85% |
 | CMake depfile | `-MD/-MF/-MT/-MQ`，Ninja 增量实测 | 90% |
+| PCH 策略/缓存 | `.gch` 策略、artifact 缓存、并发锁、失效/清理/统计、PCH depfile | 90% |
+| PCH 二进制 | 不解析 GCC `.gch` 内容 | 0%（有意不实现） |
 | 行号/诊断 | 补了 splice 物理行映射 | 85% |
 | header-name 词法 | 直接 quote/angle；反斜杠/`//` 已支持并有测试 | 90% |
 | 真实项目 corpus | 只有小型标准头测试 | 30% |
 | fuzz / 资源上限 / 安全 | 基础限制，无 fuzz | 30% |
-| CI / 发布 / 许可证 | 未完成 | 20% |
+| CI / 发布 / 许可证 | GitHub Release、exe/zip、LICENSE、CHANGELOG 已具备；CI 未完成 | 60% |
 
 综合：**约 85%** 完成“Windows UCRT64 GCC 15.2 受控项目”的生产目标。
 
@@ -192,8 +195,8 @@
 - 无 token/输出/内存/时间预算；
 - 无 fuzz / ASan / UBSan；
 - 顶层异常处理仍不完整；
-- 输出文件存在 TOCTOU/并发写风险；
-- 无文件锁/fsync。
+- 输出文件仍存在 TOCTOU/并发写风险；
+- PCH 缓存有目录锁和原子 rename，但未做 fsync/掉电持久性保证。
 
 ### 4.6 性能（P2）
 
@@ -206,9 +209,8 @@
 
 - 仅本地 Windows 验证；
 - 无 CI；
-- 无 install/package；
-- 无 LICENSE/CHANGELOG；
-- 无支持矩阵/故障排查。
+- 已有 GitHub Release、独立 exe 和 zip 包，但没有系统安装器；
+- 已有 LICENSE/CHANGELOG、支持矩阵和故障排查说明。
 
 ---
 
@@ -238,11 +240,10 @@
 ### M4：发布/性能（1 周）
 
 - CI；
-- install/package；
-- LICENSE/CHANGELOG；
-- include guard 缓存/基准。
+- 系统安装器；
+- 真实项目 include guard 缓存/基准。
 
-总剩余：**约 3–6 周**。
+总剩余的主要工作是真实 corpus、fuzz/CI 和性能收敛，不是当前功能不可用。
 
 ---
 
