@@ -1175,6 +1175,13 @@ void Preprocessor::processTokenStream(std::shared_ptr<SourceFile> file) {
         if (directive) {
             std::vector<Token> line = lines[i];
             adjustLine(line, i);
+            const bool poisonPragma =
+                line.size() >= 4 && line[1].isIdentifier("pragma") &&
+                line[2].isIdentifier("GCC") &&
+                line[3].isIdentifier("poison");
+            if (!poisonPragma) {
+                checkPoisoned(line);
+            }
             bool wrote = false;
             processDirective(line, i, wrote);
             if (!wrote && !compactGaps) {
@@ -1234,7 +1241,9 @@ void Preprocessor::processTokenStream(std::shared_ptr<SourceFile> file) {
         }
 
         adjustLine(chunk, i);
+        checkPoisoned(chunk);
         const std::vector<Token> expanded = expandTokens(chunk);
+        checkPoisoned(expanded);
         if (compactGaps && !expanded.empty()) {
             const Token& first = expanded.front();
             if (first.kind != TokenKind::Newline) {
@@ -1334,6 +1343,65 @@ bool Preprocessor::handlePragmaText(std::string_view text,
         return false;
     }
 
+    if (trimmed.rfind("GCC poison", 0) == 0) {
+        std::string names = trim(trimmed.substr(10));
+        std::size_t start = 0;
+        while (start < names.size()) {
+            while (start < names.size() &&
+                   std::isspace(static_cast<unsigned char>(names[start]))) {
+                ++start;
+            }
+            std::size_t end = start;
+            while (end < names.size() &&
+                   !std::isspace(static_cast<unsigned char>(names[end]))) {
+                ++end;
+            }
+            if (end > start) {
+                SourceLocation poisonLoc = loc;
+                poisonLoc.column = loc.column + 19 +
+                                   static_cast<std::uint32_t>(start);
+                poisoned_[names.substr(start, end - start)] = poisonLoc;
+            }
+            start = end;
+        }
+        return false;
+    }
+
+    if (trimmed.rfind("GCC dependency", 0) == 0) {
+        if (auto argument = extractQuotedArgument(trimmed)) {
+            std::filesystem::path dependency = pathFromUtf8(*argument);
+            if (!isRegularFile(dependency)) {
+                if (!currentPath_.empty()) {
+                    dependency = currentPath_.parent_path() / dependency;
+                }
+            }
+            if (!isRegularFile(dependency)) {
+                diagnostics_.report(
+                    Severity::Fatal, loc,
+                    *argument + ": No such file or directory");
+            } else {
+                std::error_code ec;
+                const auto currentTime = std::filesystem::last_write_time(
+                    currentPath_, ec);
+                const auto dependencyTime = std::filesystem::last_write_time(
+                    dependency, ec);
+                if (!ec && currentTime < dependencyTime) {
+                    diagnostics_.warning(
+                        loc, "current file is older than " + *argument,
+                        "-Wpragmas");
+                }
+            }
+        }
+        return false;
+    }
+
+    if (trimmed.rfind("GCC target", 0) == 0 ||
+        trimmed.rfind("GCC optimize", 0) == 0 ||
+        trimmed.rfind("GCC visibility", 0) == 0) {
+        writer_->writePragma(trimmed);
+        return true;
+    }
+
     // The preprocessed output is a single file; emitting system_header there
     // would either be ignored or incorrectly mark the whole output as a system
     // header. Consume it and keep the pragma out of the .i.
@@ -1385,6 +1453,28 @@ bool Preprocessor::handlePragmaText(std::string_view text,
                          "-Wunknown-pragmas");
     writer_->writePragma(trimmed);
     return true;
+}
+
+void Preprocessor::checkPoisoned(const std::vector<Token>& tokens) {
+    for (const auto& token : tokens) {
+        if (token.kind != TokenKind::Identifier) {
+            continue;
+        }
+        const auto found = poisoned_.find(token.text);
+        if (found == poisoned_.end()) {
+            continue;
+        }
+        const std::string key =
+            (token.loc.file ? token.loc.file->displayPath : std::string()) +
+            ":" + std::to_string(token.loc.line) + ":" +
+            std::to_string(token.loc.column) + ":" + token.text;
+        if (!reportedPoisonUses_.insert(key).second) {
+            continue;
+        }
+        diagnostics_.error(token.loc, "attempt to use poisoned '" +
+                                         token.text + "'");
+        diagnostics_.note(found->second, "poisoned here");
+    }
 }
 
 bool Preprocessor::processDirective(const std::vector<Token>& inputLine,

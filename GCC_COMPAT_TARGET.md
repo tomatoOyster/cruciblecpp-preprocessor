@@ -186,7 +186,9 @@
 
 - `#pragma GCC diagnostic push/pop/ignored/warning/error` 已有内部状态；
 - `#pragma GCC system_header` 和 `-isystem` 头默认抑制 warning，`-Wsystem-headers` 可恢复；
-- `#pragma GCC poison/dependency/target/optimize/visibility` 仍主要透传。
+- `#pragma GCC poison` 会阻止后续使用并输出 poisoned note；
+- `#pragma GCC dependency` 检查文件存在性和时间戳；
+- `#pragma GCC target/optimize/visibility` 透传。
 
 ### 4.5 健壮性 / 安全（P1）
 
@@ -273,7 +275,7 @@
 
 - 标准库头可以预处理并编译；
 - `<>` 搜索、完整 `__has_*`、system_header、depfile 都已打通；
-- 60 个 CTest 通过；
+- 62 个 CTest 通过；
 - CMake + Ninja 的标准头项目实测通过；
 - 不传 `-isystem` 的自动发现标准头测试通过。
 

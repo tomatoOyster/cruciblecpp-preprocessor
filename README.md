@@ -535,7 +535,7 @@ CAT(, x)                  // x
 
 ## 测试
 
-当前包含 **60 个 CTest 用例**（正例会预处理后再用 GCC 编译，负例验证退出码）。
+当前包含 **62 个 CTest 用例**（正例会预处理后再用 GCC 编译，负例验证退出码）。
 
 > 测试规则：新增正例必须使用 `add_compile_case`，保证 `.i` 会被 GCC 实际接受；如果单独增加只做预处理的 `add_test`，必须再配一个 `compile_*` 测试。
 
@@ -576,6 +576,7 @@ CAT(, x)                  // x
 - 引号和尖括号 include 都支持 Windows 反斜杠路径；`#include /*comment*/ <...>` 这类“注释夹在关键字和 header name 之间”的组合仍是边界。
 - depfile 记录实际处理的 quote/angle include，也记录 `__has_include` / `__has_include_next` 找到的探测头文件，与 GCC `-MD` 一致。
 - `#pragma GCC system_header` 和来自 `-isystem` 的头会抑制普通警告；`-Wsystem-headers` 可重新显示。`#pragma GCC diagnostic push/pop/ignored/warning/error` 已维护独立诊断状态。
+- 已支持 `#pragma GCC poison`（含 poisoned note）、`#pragma GCC dependency`（缺失文件 fatal、过期 warning）、`#pragma GCC target/optimize/visibility` 透传；`#pragma GCC poison/dependency` 不写入 `.i`。
 
 ## 许可证
 

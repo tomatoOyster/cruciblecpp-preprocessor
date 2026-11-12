@@ -167,6 +167,7 @@ private:
                      std::uint32_t includedFromLine = 0,
                      bool systemHeader = false);
     void processTokenStream(std::shared_ptr<SourceFile> file);
+    void checkPoisoned(const std::vector<Token>& tokens);
     bool processDirective(const std::vector<Token>& line,
                           std::size_t zeroBasedLine, bool& wroteOutput);
     bool processInclude(const std::vector<Token>& line, bool nextInclude,
@@ -212,6 +213,8 @@ private:
     std::string currentPresumedFile_;
     std::string baseFile_;
     std::vector<IncludeFrame> includeStack_;
+    std::unordered_map<std::string, SourceLocation> poisoned_;
+    std::unordered_set<std::string> reportedPoisonUses_;
     bool currentSystemHeader_ = false;
     int lineDelta_ = 0;
     int includeLevel_ = 0;

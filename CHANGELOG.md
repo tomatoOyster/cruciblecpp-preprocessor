@@ -16,9 +16,11 @@
 - 实现 `#pragma GCC diagnostic push/pop/ignored/warning/error` 状态。
 - 实现 `#pragma GCC system_header` 和 `-isystem` 头的默认 warning 抑制，支持 `-Wsystem-headers`。
 - include trace 增加 include 所在行号。
-- 新增 `diagnostics` 集成测试，检查 caret、include trace、note、fatal、pragma 状态、system header 和关闭 caret。
+- 新增 `#pragma GCC poison`（含 poisoned note）、`#pragma GCC dependency`（缺失 fatal、过期 warning）、`#pragma GCC target/optimize/visibility` 透传。
+- 继续对齐条件指令文案：`'#else' without '#if'`、`'#elif' after '#else'`、`#if with no expression`、`unterminated argument list invoking macro 'F'`。
+- 新增 `diagnostics` 集成测试，检查 caret、include trace、note、fatal、pragma 状态、system header、poison、dependency 和关闭 caret。
 - 新增宏重定义正例，预处理输出继续交给 GCC 编译。
-- CTest 为 60 个。
+- CTest 为 62 个。
 
 ## V2.5.3 — 2026-11-12
 

@@ -160,3 +160,43 @@ execute_process(
 if(NOT result EQUAL 0)
     message(FATAL_ERROR "-Wno-error=cpp did not override -Werror:\n${error}")
 endif()
+
+# GCC poison.
+execute_process(
+    COMMAND "${PREPROCESSOR}" -P "${SOURCE_DIR}/diagnostics/poison.cpp"
+            -o "${work}/poison.i"
+    RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error)
+if(result EQUAL 0)
+    message(FATAL_ERROR "poisoned identifier was accepted:\n${error}")
+endif()
+if(NOT error MATCHES "attempt to use poisoned 'POISONED_NAME'")
+    message(FATAL_ERROR "missing poison diagnostic:\n${error}")
+endif()
+if(NOT error MATCHES "poisoned here")
+    message(FATAL_ERROR "missing poison note:\n${error}")
+endif()
+
+# GCC dependency missing file is fatal.
+execute_process(
+    COMMAND "${PREPROCESSOR}" -P
+            "${SOURCE_DIR}/diagnostics/dependency_missing.cpp"
+            -o "${work}/dependency.i"
+    RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error)
+if(result EQUAL 0)
+    message(FATAL_ERROR "missing dependency was accepted:\n${error}")
+endif()
+if(NOT error MATCHES "fatal error: does_not_exist_98765\\.h: No such file or directory")
+    message(FATAL_ERROR "wrong dependency diagnostic:\n${error}")
+endif()
+
+# Known GCC compiler pragmas are passed through without unknown-pragma noise.
+execute_process(
+    COMMAND "${PREPROCESSOR}" -P "${SOURCE_DIR}/diagnostics/gcc_pragmas.cpp"
+            -o "${work}/gcc_pragmas.i"
+    RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error)
+if(NOT result EQUAL 0)
+    message(FATAL_ERROR "known GCC pragmas failed:\n${error}")
+endif()
+if(error MATCHES "unknown-pragma|ignoring #pragma GCC")
+    message(FATAL_ERROR "known GCC pragma was misdiagnosed:\n${error}")
+endif()
