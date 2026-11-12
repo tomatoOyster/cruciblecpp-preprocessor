@@ -155,10 +155,12 @@ bool MacroRegistry::define(const MacroDefinition& definition,
         if (definitionsEquivalent(it->second, definition)) {
             return true;
         }
-        diagnostics.error(definition.definitionLoc,
-                          "macro '" + definition.name +
-                              "' redefined with a different replacement list");
-        return false;
+        diagnostics.warning(definition.definitionLoc,
+                            "'" + definition.name + "' redefined");
+        diagnostics.note(it->second.definitionLoc,
+                         "this is the location of the previous definition");
+        it->second = definition;
+        return true;
     }
 
     macros_.emplace(definition.name, definition);

@@ -33,6 +33,7 @@ add_compile_case(pound_ops test_pound_ops.cpp)
 add_compile_case(gcc_profile test_gcc_profile.cpp)
 add_compile_case(gcc_has test_gcc_has.cpp)
 add_compile_case(character_constants test_character_constants.cpp)
+add_compile_case(redefinition test_redefinition.cpp)
 add_compile_case(trigraph test_trigraph.cpp -trigraphs)
 add_compile_case(charset_latin1 test_charset_latin1.cpp
                  -finput-charset=ISO-8859-1)
@@ -146,12 +147,18 @@ endfunction()
 
 add_negative_case(unclosed_if unclosed_if.cpp)
 add_negative_case(unterminated_macro unterminated_macro.cpp)
-add_negative_case(bad_redefinition bad_redefinition.cpp)
 add_negative_case(missing_include missing_include.cpp)
 add_negative_case(error_directive error_directive.cpp)
 add_negative_case(unterminated_string unterminated_string.cpp)
 add_negative_case(missing_angle_include missing_angle_include.cpp)
 add_negative_case(nostdinc_angle nostdinc_angle.cpp -nostdinc)
+
+add_test(NAME diagnostics
+    COMMAND ${CMAKE_COMMAND}
+            -DPREPROCESSOR=$<TARGET_FILE:cruciblecpp-preprocessor>
+            -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+            -DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/test_diagnostics.cmake)
 
 add_test(NAME char_edge_values
     COMMAND ${CMAKE_COMMAND}

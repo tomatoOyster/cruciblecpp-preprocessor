@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <ctime>
 #include <filesystem>
@@ -14,8 +15,11 @@
 #include <vector>
 
 #ifdef _WIN32
+#include <io.h>
 #include <windows.h>
 #include <shellapi.h>
+#else
+#include <unistd.h>
 #endif
 
 namespace {
@@ -145,7 +149,11 @@ void printUsage(std::ostream& out) {
            "  -MQ <target>                 Dependency target (Make-escaped)\n"
            "  -MP                          Accepted for CMake compatibility\n"
            "  -Werror                      Treat warnings as errors\n"
-           "  --strict                     Treat unknown directives/pragmas as errors\n"
+           "  -fdiagnostics-color=<mode>   auto | always | never\n"
+           "  -fno-diagnostics-color       Disable diagnostic colors\n"
+           "  -fdiagnostics-show-caret     Show source line and caret (default)\n"
+           "  -fno-diagnostics-show-caret  Disable source line and caret\n"
+           "  --strict                     Treat unknown pragmas as errors\n"
            "  --drop-unknown-pragmas       Drop unknown #pragma directives\n"
            "  --no-output-on-error         Do not write output after an error\n"
            "  --max-errors <n>             Stop after n errors (default: 20)\n"
@@ -171,6 +179,14 @@ bool parseUnsigned(std::string_view text, std::uintmax_t& value) {
     }
 }
 
+bool stderrIsTerminal() {
+#ifdef _WIN32
+    return _isatty(_fileno(stderr)) != 0;
+#else
+    return isatty(fileno(stderr)) != 0;
+#endif
+}
+
 bool parseInteger(std::string_view text, int& value) {
     try {
         std::size_t consumed = 0;
@@ -191,6 +207,7 @@ int main(int argc, char** argv) {
     crucible::PreprocessorOptions options;
     std::vector<std::filesystem::path> inputs;
     std::vector<std::filesystem::path> outputs;
+    bool colorSpecified = false;
     const std::vector<std::string> arguments = collectArguments(argc, argv);
 
     // This is intentionally handled before all other arguments: when
@@ -216,7 +233,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (arg == "--version") {
-            std::cout << "cruciblecpp-preprocessor 2.5.3\n";
+            std::cout << "cruciblecpp-preprocessor 2.6.0\n";
             return 0;
         }
         if (arg == "-o" || arg == "--output") {
@@ -286,6 +303,35 @@ int main(int argc, char** argv) {
         }
         if (arg == "-trigraphs" || arg == "--trigraphs") {
             options.trigraphs = true;
+            continue;
+        }
+        if (arg == "-fdiagnostics-show-caret") {
+            options.showDiagnosticCaret = true;
+            continue;
+        }
+        if (arg == "-fno-diagnostics-show-caret") {
+            options.showDiagnosticCaret = false;
+            continue;
+        }
+        if (arg == "-fno-diagnostics-color") {
+            options.colorDiagnostics = false;
+            colorSpecified = true;
+            continue;
+        }
+        if (arg.rfind("-fdiagnostics-color=", 0) == 0) {
+            const std::string mode = arg.substr(20);
+            if (mode == "always") {
+                options.colorDiagnostics = true;
+            } else if (mode == "never") {
+                options.colorDiagnostics = false;
+            } else if (mode == "auto") {
+                options.colorDiagnostics = stderrIsTerminal();
+            } else {
+                std::cerr << "error: unknown -fdiagnostics-color mode '"
+                          << mode << "'\n";
+                return 2;
+            }
+            colorSpecified = true;
             continue;
         }
         if (arg == "-MD" || arg == "-MMD") {
@@ -491,6 +537,10 @@ int main(int argc, char** argv) {
             return 2;
         }
         inputs.push_back(pathFromUtf8(arg));
+    }
+
+    if (!colorSpecified) {
+        options.colorDiagnostics = stderrIsTerminal();
     }
 
     if (inputs.empty()) {

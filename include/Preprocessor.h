@@ -36,6 +36,8 @@ public:
 
     void setWarningsAsErrors(bool enabled) { warningsAsErrors_ = enabled; }
     void setMaxErrors(int max) { maxErrors_ = max; }
+    void setShowCaret(bool enabled) { showCaret_ = enabled; }
+    void setColor(bool enabled) { color_ = enabled; }
     void setIncludeStack(std::vector<std::string> stack) {
         includeStack_ = std::move(stack);
     }
@@ -61,6 +63,8 @@ private:
     int maxErrors_ = 20;
     int errorCount_ = 0;
     bool warningsAsErrors_ = false;
+    bool showCaret_ = true;
+    bool color_ = false;
     bool fatal_ = false;
     bool limitReached_ = false;
     std::vector<std::string> includeStack_;
@@ -91,6 +95,8 @@ struct PreprocessorOptions {
     bool lineMarkers = true;
     bool keepComments = false;
     bool trigraphs = false;
+    bool showDiagnosticCaret = true;
+    bool colorDiagnostics = false;
     bool warningsAsErrors = false;
     bool strict = false;
     bool dropUnknownPragmas = false;

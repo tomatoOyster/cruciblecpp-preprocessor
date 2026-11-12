@@ -1,5 +1,21 @@
 # Changelog
 
+## V2.6.0 — 2026-11-12
+
+### 诊断系统升级
+
+- 诊断输出增加 GCC 风格的源码行和 caret。
+- 增加 include trace：`In file included from ...`。
+- 宏重定义从 error 改为 GCC 行为：`warning: 'NAME' redefined`，并附 `note: this is the location of the previous definition`，新定义生效。
+- `#error` / `#warning` 消息增加 `#error` / `#warning` 前缀。
+- 缺失 include 改为 `fatal error: X: No such file or directory`。
+- 未闭合条件改为 `unterminated #if`。
+- 未知 preprocessing directive 改为 `invalid preprocessing directive #foo`。
+- 增加 `-fdiagnostics-color=auto|always|never`、`-fno-diagnostics-color`、`-fdiagnostics-show-caret`、`-fno-diagnostics-show-caret`。
+- 新增 `diagnostics` 集成测试，检查 caret、include trace、note、fatal 和关闭 caret。
+- 新增宏重定义正例，预处理输出继续交给 GCC 编译。
+- CTest 为 60 个。
+
 ## V2.5.3 — 2026-11-12
 
 ### 新增

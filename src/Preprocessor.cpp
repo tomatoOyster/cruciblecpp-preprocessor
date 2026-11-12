@@ -378,6 +378,109 @@ std::optional<std::string> extractQuotedArgument(std::string_view text) {
 
 } // namespace
 
+namespace {
+
+const char* severityLabel(Severity severity) {
+    switch (severity) {
+    case Severity::Note:
+        return "note";
+    case Severity::Warning:
+        return "warning";
+    case Severity::Error:
+        return "error";
+    case Severity::Fatal:
+        return "fatal error";
+    }
+    return "error";
+}
+
+const char* severityColor(Severity severity) {
+    switch (severity) {
+    case Severity::Note:
+        return "\033[1;36m";
+    case Severity::Warning:
+        return "\033[1;35m";
+    case Severity::Error:
+    case Severity::Fatal:
+        return "\033[1;31m";
+    }
+    return "";
+}
+
+std::string expandTabs(std::string_view line) {
+    std::string expanded;
+    expanded.reserve(line.size());
+    for (char c : line) {
+        if (c == '\t') {
+            const std::size_t spaces = 8 - (expanded.size() % 8);
+            expanded.append(spaces, ' ');
+        } else {
+            expanded.push_back(c);
+        }
+    }
+    return expanded;
+}
+
+std::size_t expandedColumn(std::string_view line, std::size_t column) {
+    std::size_t expanded = 0;
+    for (std::size_t i = 0; i < line.size() && i + 1 < column; ++i) {
+        if (line[i] == '\t') {
+            expanded += 8 - (expanded % 8);
+        } else {
+            ++expanded;
+        }
+    }
+    return expanded;
+}
+
+void printSourceContext(const SourceLocation& loc, bool color) {
+    if (!loc.valid() || !loc.file || loc.offset > loc.file->text.size()) {
+        return;
+    }
+    const std::string& text = loc.file->text;
+    std::size_t start = 0;
+    if (loc.offset != 0) {
+        const std::size_t previous = text.rfind('\n', loc.offset - 1);
+        start = previous == std::string::npos ? 0 : previous + 1;
+    }
+    std::size_t end = text.find('\n', loc.offset);
+    if (end == std::string::npos) {
+        end = text.size();
+    }
+    std::string_view line(text.data() + start, end - start);
+    if (!line.empty() && line.back() == '\r') {
+        line.remove_suffix(1);
+    }
+
+    const std::string expanded = expandTabs(line);
+    const std::size_t column = expandedColumn(
+        line, static_cast<std::size_t>(loc.column == 0 ? 1 : loc.column));
+    const std::string number = std::to_string(loc.line);
+    const std::string gutter(number.size(), ' ');
+    if (color) {
+        std::cerr << "\033[1;32m";
+    }
+    std::cerr << number << " | " << expanded << '\n';
+    std::cerr << gutter << " | " << std::string(column, ' ') << "^\n";
+    if (color) {
+        std::cerr << "\033[0m";
+    }
+}
+
+void printIncludeTrace(const std::vector<std::string>& stack,
+                       const SourceLocation& loc) {
+    if (!loc.valid() || stack.size() < 2) {
+        return;
+    }
+    for (std::size_t i = stack.size() - 1; i > 0; --i) {
+        std::cerr << (i == stack.size() - 1 ? "In file included from "
+                                            : "                 from ")
+                  << stack[i - 1] << (i == 1 ? ":" : ",") << '\n';
+    }
+}
+
+} // namespace
+
 DiagnosticSink::DiagnosticSink(int maxErrors) : maxErrors_(maxErrors) {}
 
 void DiagnosticSink::report(Severity severity, const SourceLocation& loc,
@@ -393,6 +496,8 @@ void DiagnosticSink::report(Severity severity, const SourceLocation& loc,
         }
     }
 
+    printIncludeTrace(includeStack_, loc);
+
     if (!loc.presumedFile.empty()) {
         std::cerr << loc.presumedFile << ':' << loc.line << ':'
                   << loc.column << ": ";
@@ -403,27 +508,17 @@ void DiagnosticSink::report(Severity severity, const SourceLocation& loc,
         std::cerr << "<command line>: ";
     }
 
-    switch (severity) {
-    case Severity::Note:
-        std::cerr << "note: ";
-        break;
-    case Severity::Warning:
-        std::cerr << "warning: ";
-        break;
-    case Severity::Error:
-        std::cerr << "error: ";
-        break;
-    case Severity::Fatal:
-        std::cerr << "fatal error: ";
-        break;
+    if (color_) {
+        std::cerr << severityColor(severity);
     }
-    std::cerr << message << '\n';
+    std::cerr << severityLabel(severity) << ':';
+    if (color_) {
+        std::cerr << "\033[0m";
+    }
+    std::cerr << ' ' << message << '\n';
 
-    if (!includeStack_.empty()) {
-        for (auto it = includeStack_.rbegin() + 1;
-             it != includeStack_.rend(); ++it) {
-            std::cerr << "  included from " << *it << '\n';
-        }
+    if (showCaret_) {
+        printSourceContext(loc, color_);
     }
 
     if (severity == Severity::Fatal) {
@@ -447,6 +542,8 @@ Preprocessor::Preprocessor(PreprocessorOptions options)
       special_(std::make_unique<SpecialOperator>(diagnostics_)),
       writer_(std::make_unique<OutputWriter>(options_.lineMarkers)) {
     diagnostics_.setWarningsAsErrors(options_.warningsAsErrors);
+    diagnostics_.setShowCaret(options_.showDiagnosticCaret);
+    diagnostics_.setColor(options_.colorDiagnostics);
 
     if (options_.autoGccIncludes) {
         const GccDiscovery discovery = discoverGccFromPath();
@@ -595,7 +692,7 @@ Preprocessor::Preprocessor(PreprocessorOptions options)
         PchCacheContext context;
         context.compiler = pathFromUtf8(compilerPath_);
         context.compilerVersion = compilerVersion_;
-        context.toolVersion = "2.5.3";
+        context.toolVersion = "2.6.0";
         context.standard = options_.standard;
         context.inputCharset = options_.inputCharset;
         context.executionCharset = options_.executionCharset;
@@ -798,12 +895,11 @@ bool Preprocessor::applyCommandLine() {
             std::filesystem::path pch = forced;
             pch += ".gch";
             if (isRegularFile(pch)) {
-                diagnostics_.error(
-                    {}, "cannot find forced include file '" +
-                            pathToUtf8(forced) +
-                            "'; found only precompiled header '" +
-                            pathToUtf8(pch) +
-                            "', and g++ -E cannot use it");
+                diagnostics_.report(
+                    Severity::Fatal, {},
+                    pathToUtf8(forced) + ": No such file or directory; "
+                    "found only precompiled header '" +
+                        pathToUtf8(pch) + "', and g++ -E cannot use it");
                 return false;
             }
         }
@@ -1266,25 +1362,17 @@ bool Preprocessor::processDirective(const std::vector<Token>& inputLine,
             wroteOutput = true;
         }
     } else if (directive == "error") {
-        diagnostics_.error(loc, joinTokens(line, 2));
+        diagnostics_.error(line.size() > 1 ? line[1].loc : loc,
+                           "#error " + joinTokens(line, 2));
     } else if (directive == "warning") {
-        diagnostics_.warning(loc, joinTokens(line, 2));
+        diagnostics_.warning(line.size() > 1 ? line[1].loc : loc,
+                             "#warning " + joinTokens(line, 2));
     } else if (directive == "pragma") {
         const std::string text = joinTokens(line, 2);
         wroteOutput = handlePragmaText(text, loc);
     } else {
-        const std::string text = joinTokens(line, 1);
-        if (options_.strict) {
-            diagnostics_.error(loc, "unknown preprocessing directive #" +
-                                       directive);
-        } else {
-            diagnostics_.warning(loc,
-                                 "unknown preprocessing directive #" +
-                                     directive + "; passing it through");
-            writer_->ensureNewline();
-            writer_->writeRaw("#" + text + "\n");
-            wroteOutput = true;
-        }
+        diagnostics_.error(loc, "invalid preprocessing directive #" +
+                                   directive);
     }
     wroteOutput = wroteOutput || wroteLeadingComments;
     return true;
@@ -1561,16 +1649,23 @@ bool Preprocessor::processInclude(const std::vector<Token>& line,
     auto resolved = includes_->resolve(name, angled, currentPath_,
                                        nextInclude);
     if (!resolved.has_value()) {
+        SourceLocation includeLoc = loc;
+        for (std::size_t k = 2; k < line.size(); ++k) {
+            if (!line[k].isTrivia()) {
+                includeLoc = line[k].loc;
+                break;
+            }
+        }
         if (auto pch = includes_->findPrecompiledHeader(
                 name, angled, currentPath_, nextInclude)) {
             diagnostics_.error(
-                loc, "cannot find include file '" + name +
-                         "'; found only precompiled header '" +
-                         pathToUtf8(*pch) +
-                         "', and g++ -E cannot use it");
+                includeLoc, "cannot find include file '" + name +
+                                "'; found only precompiled header '" +
+                                pathToUtf8(*pch) +
+                                "', and g++ -E cannot use it");
         } else {
-            diagnostics_.error(loc,
-                               "cannot find include file '" + name + "'");
+            diagnostics_.report(Severity::Fatal, includeLoc,
+                                name + ": No such file or directory");
         }
         return false;
     }

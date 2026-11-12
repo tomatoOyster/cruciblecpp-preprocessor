@@ -1112,7 +1112,7 @@ void ConditionalEngine::onEndif(const SourceLocation& loc) {
 
 void ConditionalEngine::reportUnclosed() {
     for (const auto& frame : stack_) {
-        diagnostics_.error(frame.loc, "unterminated conditional directive");
+        diagnostics_.error(frame.loc, "unterminated #if");
     }
 }
 

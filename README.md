@@ -1,6 +1,6 @@
 # CrucibleCpp Preprocessor
 
-> **V2.5.3（本地开发版，未发布）** — Windows x64 独立 C++ 预处理器，自动发现 PATH 中的 GCC 头文件目录，直接替代 `g++ -E` 的预处理步骤。
+> **V2.6.0（本地开发版，未发布）** — Windows x64 独立 C++ 预处理器，自动发现 PATH 中的 GCC 头文件目录，直接替代 `g++ -E` 的预处理步骤。
 >
 > [Changelog](CHANGELOG.md)
 
@@ -359,7 +359,11 @@ g++ -std=c++20 -fsyntax-only output\hello.i
 -MQ <target>                 依赖目标（Make 转义）
 -MP                          兼容 CMake（当前无额外动作）
 -Werror                      警告视为错误
---strict                     未知指令/未知 pragma 视为错误
+-fdiagnostics-color=<mode>   auto | always | never
+-fno-diagnostics-color       关闭诊断颜色
+-fdiagnostics-show-caret     显示源码行和 caret（默认）
+-fno-diagnostics-show-caret  关闭源码行和 caret
+--strict                     未知 pragma 视为错误
 --drop-unknown-pragmas       丢弃未知 pragma
 --no-output-on-error         发生错误时不写输出文件
 --max-errors <n>             最大错误数（默认 20）
@@ -526,7 +530,7 @@ CAT(, x)                  // x
 
 ## 测试
 
-当前包含 **58 个 CTest 用例**（正例会预处理后再用 GCC 编译，负例验证退出码）。
+当前包含 **60 个 CTest 用例**（正例会预处理后再用 GCC 编译，负例验证退出码）。
 
 > 测试规则：新增正例必须使用 `add_compile_case`，保证 `.i` 会被 GCC 实际接受；如果单独增加只做预处理的 `add_test`，必须再配一个 `compile_*` 测试。
 
@@ -558,7 +562,7 @@ CAT(, x)                  // x
 - `__has_builtin` / `__has_attribute` / `__has_cpp_attribute` / `__has_feature` / `__has_extension` 的完整 GCC 15.2 表由 GCC 15.2 源码和实际编译器查询生成，见 `include/GccHasData.inc`；换 GCC 版本需用 `tools/generate_gcc_has_data.py` 重新生成。
 - trigraph 默认保持 GCC 的 C++20 行为（不翻译）；传入 `-trigraphs` 时按 GCC 的 nine trigraph 序列翻译，并参与反斜杠换行拼接。
 - 不解析 GCC 二进制 PCH 格式；支持 `.gch` 的 ignore/warn/error/report 策略和外部 PCH artifact 缓存。`g++ -E` 本身不使用 PCH。
-- 未知 pragma 默认透传；未知指令默认 warning + 透传，`--strict` 时作为 error。
+- 未知 preprocessing directive 现在是 error；未知 `#pragma` 默认透传，`--strict` 时作为 error。
 - include guard 通过正常 `#ifndef` 语义处理，未做“检测 guard 后跳过整个文件”的性能优化。
 - 字符常量按 GCC 15.2 / Windows x64 实现：普通字符使用所选执行字符集，`wchar_t` 为 16 位。
 - 支持 `-finput-charset` / `-fexec-charset` 的常用值：`UTF-8`、`UTF-16`、`UTF-16LE/BE`、`GBK`/`CP936`、`CP1252`、`ISO-8859-1`、`ASCII`、`CP<n>`；字符串字面量尚未按执行字符集转码，当前只影响 `#if` 字符常量。

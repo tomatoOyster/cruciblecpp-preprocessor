@@ -47,7 +47,7 @@
 | CMake depfile | `-MD/-MF/-MT/-MQ`，含 `__has_include` 探测，Ninja 增量实测 | 95% |
 | PCH 策略/缓存 | `.gch` 策略、artifact 缓存、并发锁、失效/清理/统计、PCH depfile | 90% |
 | PCH 二进制 | 不解析 GCC `.gch` 内容 | 0%（有意不实现） |
-| 行号/诊断 | 补了 splice 物理行映射 | 85% |
+| 行号/诊断 | splice 物理行映射、源码行/caret、include trace | 90% |
 | header-name 词法 | 直接 quote/angle；反斜杠/`//` 已支持并有测试 | 90% |
 | 真实项目 corpus | 只有小型标准头测试 | 30% |
 | fuzz / 资源上限 / 安全 | 基础限制，无 fuzz | 30% |
@@ -273,7 +273,7 @@
 
 - 标准库头可以预处理并编译；
 - `<>` 搜索、完整 `__has_*`、system_header、depfile 都已打通；
-- 58 个 CTest 通过；
+- 60 个 CTest 通过；
 - CMake + Ninja 的标准头项目实测通过；
 - 不传 `-isystem` 的自动发现标准头测试通过。
 

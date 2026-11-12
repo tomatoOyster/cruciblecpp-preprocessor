@@ -114,15 +114,16 @@ std::shared_ptr<SourceFile> FileReader::read(const std::filesystem::path& path,
                                              bool trigraphs) {
     std::ifstream in(path, std::ios::binary);
     if (!in) {
-        diagnostics.error({}, "cannot open source file '" + pathToUtf8(path) +
-                                  "'");
+        diagnostics.report(Severity::Fatal, {},
+                           pathToUtf8(path) + ": No such file or directory");
         return nullptr;
     }
 
     std::ostringstream stream;
     stream << in.rdbuf();
     if (!in.good() && !in.eof()) {
-        diagnostics.error({}, "failed while reading '" + pathToUtf8(path) + "'");
+        diagnostics.report(Severity::Fatal, {},
+                           pathToUtf8(path) + ": input/output error");
         return nullptr;
     }
 
