@@ -208,27 +208,4 @@ std::string SpecialOperator::destringize(std::string_view literal) const {
     return out;
 }
 
-int SpecialOperator::hasCppAttributeValue(std::string_view name) {
-    if (name == "deprecated") {
-        return 201309;
-    }
-    if (name == "fallthrough" || name == "maybe_unused") {
-        return 201603;
-    }
-    if (name == "nodiscard") {
-        return 201907;
-    }
-    if (name == "likely" || name == "unlikely" ||
-        name == "no_unique_address") {
-        return 201803;
-    }
-    if (name == "assume") {
-        return 202207;
-    }
-    if (name == "carries_dependency" || name == "noreturn") {
-        return 200809;
-    }
-    return 0;
-}
-
 } // namespace crucible

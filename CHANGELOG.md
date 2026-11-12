@@ -1,5 +1,19 @@
 # Changelog
 
+## V2.5.0 — 2026-11-12
+
+### 新增
+
+- 从 GCC 15.2 源码和实际编译器生成完整的 `__has_*` 数据表：
+  - 1699 个 `__has_builtin` builtin/type-trait；
+  - 149 个 `__has_attribute` attribute；
+  - 295 个 `__has_cpp_attribute` 标准/`gnu::` 属性及值；
+  - 53 个 `__has_feature` / `__has_extension` C++20 特性。
+- 支持 `gnu::` 作用域 C++ 属性，例如 `__has_cpp_attribute(gnu::always_inline)`。
+- `__has_feature` / `__has_extension` 不再是常量 0。
+- 新增 `tests/test_gcc_has.cpp`，CTest 增加到 57 个。
+- 新增 `tools/generate_gcc_has_data.py`，可从 GCC 15.2 源码和编译器重新生成数据。
+
 ## V2.4.1 — 2026-11-12
 
 ### 修复

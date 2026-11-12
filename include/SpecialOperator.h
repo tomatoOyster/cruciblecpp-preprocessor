@@ -34,7 +34,6 @@ public:
 
     std::string destringize(std::string_view literal) const;
 
-    static int hasCppAttributeValue(std::string_view name);
     static bool isBuiltinName(std::string_view name);
 
 private:

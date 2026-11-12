@@ -1,8 +1,8 @@
 # CrucibleCpp Preprocessor
 
-> **V2.4.1** — Windows x64 独立 C++ 预处理器，自动发现 PATH 中的 GCC 头文件目录，直接替代 `g++ -E` 的预处理步骤。
+> **V2.5.0** — Windows x64 独立 C++ 预处理器，自动发现 PATH 中的 GCC 头文件目录，直接替代 `g++ -E` 的预处理步骤。
 >
-> [下载 V2.4.1](https://github.com/tomatoOyster/cruciblecpp-preprocessor/releases/latest) · [Changelog](CHANGELOG.md)
+> [下载 V2.5.0](https://github.com/tomatoOyster/cruciblecpp-preprocessor/releases/latest) · [Changelog](CHANGELOG.md)
 
 一个用 C++20 实现的独立 C++ 预处理器，兼容矩阵锁定为：
 
@@ -520,7 +520,7 @@ CAT(, x)                  // x
 
 ## 测试
 
-当前包含 **55 个 CTest 用例**（正例会预处理后再用 GCC 编译，负例验证退出码）。
+当前包含 **57 个 CTest 用例**（正例会预处理后再用 GCC 编译，负例验证退出码）。
 
 测试覆盖：
 
@@ -547,7 +547,7 @@ CAT(, x)                  // x
 - 自动发现只支持 Windows；其他平台会退化为显式 `-I` / `-isystem`。
 - `-nostdinc` 关闭自动发现；显式路径仍然有效。
 - 硬编码 GCC 15.2（C++20）宏 profile；换 GCC 版本或标准需要重新生成 profile。
-- 不提供 `__has_*` 的完整 GCC 表；只覆盖常用 builtin/attribute 集合。
+- `__has_builtin` / `__has_attribute` / `__has_cpp_attribute` / `__has_feature` / `__has_extension` 的完整 GCC 15.2 表由 GCC 15.2 源码和实际编译器查询生成，见 `include/GccHasData.inc`；换 GCC 版本需用 `tools/generate_gcc_has_data.py` 重新生成。
 - 不实现 trigraph（C++17 已移除）。
 - 不解析 GCC 二进制 PCH 格式；支持 `.gch` 的 ignore/warn/error/report 策略和外部 PCH artifact 缓存。`g++ -E` 本身不使用 PCH。
 - 未知 pragma 默认透传；未知指令默认 warning + 透传，`--strict` 时作为 error。

@@ -40,8 +40,8 @@
 | `__has_include` | quote/angle 都支持；宏展开后二次处理 | 90% |
 | `#if` 字符常量 | 普通/多字符/L/u/U/u8/UCN，按 GCC 15.2 Windows x64 | 90% |
 | charset | `-finput-charset` / `-fexec-charset` / `-funsigned-char` | 85% |
-| `__has_builtin` / `__has_attribute` | 常用集合 | 70% |
-| `__has_cpp_attribute` | 常用属性 | 70% |
+| `__has_builtin` / `__has_attribute` | GCC 15.2 源码 + 编译器生成的完整表 | 100% |
+| `__has_cpp_attribute` | 标准属性 + `gnu::` 完整表 | 100% |
 | pragma | `once`、`push/pop`、`message`、`system_header`、未知透传 | 70%–80% |
 | 标准库头 | `<vector>`、`<string>`、`<iostream>`、`<filesystem>`、`<chrono>` 等已验证 | 85% |
 | CMake depfile | `-MD/-MF/-MT/-MQ`，Ninja 增量实测 | 90% |
@@ -84,9 +84,10 @@
 ### 2.3 `__has_*`
 
 - `__has_include` / `__has_include_next`；
-- `__has_builtin` 常用 GCC builtin/type traits；
-- `__has_attribute` 常用 GCC attribute；
-- `__has_cpp_attribute` 常用标准属性；
+- `__has_builtin` 完整 GCC 15.2 builtin/type-trait 表；
+- `__has_attribute` 完整 GCC 15.2 attribute 表；
+- `__has_cpp_attribute` 完整标准属性 + `gnu::` 表；
+- `__has_feature` / `__has_extension` 完整 C++20 语言特性表；
 - `#ifdef __has_builtin` 等与 GCC 15.2 对齐；
 - 宏展开产生的 `__has_*` 会二次求值（libstdc++ 的 `_GLIBCXX_HAS_BUILTIN` 链依赖这个）。
 
@@ -175,13 +176,11 @@
 
 **建议**：把 raw header-name 扫描扩展到 `__has_include` 和注释跳过。
 
-### 4.3 `__has_builtin` / `__has_attribute` 长尾（P1）
+### 4.3 `__has_builtin` / `__has_attribute` 长尾（已完成）
 
-- 仍是人工表；
-- 作用域属性（`gnu::always_inline`）未完整处理；
-- 宏展开参数只做了基础处理。
-
-**建议**：用 GCC 15.2 列表生成表；用真实项目 corpus 驱动补齐。
+- 已由 GCC 15.2 源码 + 编译器查询生成完整表；
+- 作用域属性（`gnu::always_inline`）已支持；
+- 表与 GCC 15.2 绑定，换版本需用 `tools/generate_gcc_has_data.py` 重新生成。
 
 ### 4.4 pragma 长尾（P1）
 
@@ -222,9 +221,9 @@
 - 与 GCC token 差分；
 - 修复 corpus 问题。
 
-### M2：pragma/`__has_*` 收敛（1–2 周）
+### M2：pragma 收敛（1 周）
 
-- 补 builtin/attribute 表；
+- builtin/attribute/feature 完整表已完成；
 - 系统头诊断策略；
 - `#pragma GCC diagnostic` 位置测试；
 - `__has_include` raw header-name。
@@ -273,9 +272,9 @@
 当前版本已经跨过“`<vector>` 能不能用”的门槛：
 
 - 标准库头可以预处理并编译；
-- `<>` 搜索、`__has_*`、system_header、depfile 都已打通；
-- 55 个 CTest 通过；
+- `<>` 搜索、完整 `__has_*`、system_header、depfile 都已打通；
+- 57 个 CTest 通过；
 - CMake + Ninja 的标准头项目实测通过；
 - 不传 `-isystem` 的自动发现标准头测试通过。
 
-下一步最有价值的是：**真实项目 corpus + pragma/`__has_*` 长尾 + fuzz/资源/CI**。
+下一步最有价值的是：**真实项目 corpus + pragma 长尾 + fuzz/资源/CI**。

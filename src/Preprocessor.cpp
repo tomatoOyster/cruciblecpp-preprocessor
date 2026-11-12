@@ -4,6 +4,7 @@
 #include "ConditionalEngine.h"
 #include "FileReader.h"
 #include "GccDiscovery.h"
+#include "GccHasTables.h"
 #include "IncludeHandler.h"
 #include "MacroExpander.h"
 #include "MacroRegistry.h"
@@ -261,168 +262,37 @@ bool isGccDefinedOperator(std::string_view name) {
            name == "__has_builtin";
 }
 
-bool gccBuiltinAvailable(std::string_view name) {
-    static const std::string_view names[] = {
-        "__builtin_launder",
-        "__builtin_expect",
-        "__builtin_expect_with_probability",
-        "__builtin_unreachable",
-        "__builtin_assume",
-        "__builtin_assume_aligned",
-        "__builtin_trap",
-        "__builtin_constant_p",
-        "__builtin_offsetof",
-        "__builtin_addressof",
-        "__builtin_bit_cast",
-        "__builtin_is_constant_evaluated",
-        "__builtin_is_corresponding_member",
-        "__builtin_is_pointer_interconvertible_with_class",
-        "__builtin_convertvector",
-        "__builtin_shufflevector",
-        "__builtin_choose_expr",
-        "__builtin_types_compatible_p",
-        "__builtin_va_start",
-        "__builtin_va_end",
-        "__builtin_va_arg",
-        "__builtin_va_copy",
-        "__builtin_alloca",
-        "__builtin_alloca_with_align",
-        "__builtin_frame_address",
-        "__builtin_return_address",
-        "__builtin_extract_return_addr",
-        "__builtin_bswap16",
-        "__builtin_bswap32",
-        "__builtin_bswap64",
-        "__builtin_clz",
-        "__builtin_clzl",
-        "__builtin_clzll",
-        "__builtin_ctz",
-        "__builtin_ctzl",
-        "__builtin_ctzll",
-        "__builtin_popcount",
-        "__builtin_popcountl",
-        "__builtin_popcountll",
-        "__builtin_parity",
-        "__builtin_parityl",
-        "__builtin_parityll",
-        "__builtin_ffs",
-        "__builtin_ffsl",
-        "__builtin_ffsll",
-        "__builtin_add_overflow",
-        "__builtin_sub_overflow",
-        "__builtin_mul_overflow",
-        "__builtin_sadd_overflow",
-        "__builtin_saddl_overflow",
-        "__builtin_saddll_overflow",
-        "__builtin_uadd_overflow",
-        "__builtin_uaddl_overflow",
-        "__builtin_uaddll_overflow",
-        "__builtin_ssub_overflow",
-        "__builtin_ssubl_overflow",
-        "__builtin_ssubll_overflow",
-        "__builtin_usub_overflow",
-        "__builtin_usubl_overflow",
-        "__builtin_usubll_overflow",
-        "__builtin_smul_overflow",
-        "__builtin_smull_overflow",
-        "__builtin_smulll_overflow",
-        "__builtin_umul_overflow",
-        "__builtin_umull_overflow",
-        "__builtin_umulll_overflow",
-        "__builtin_memcpy",
-        "__builtin_memmove",
-        "__builtin_memset",
-        "__builtin_strlen",
-        "__builtin_strcmp",
-        "__builtin_strcpy",
-        "__builtin_strncpy",
-        "__builtin_abort",
-        "__builtin_prefetch",
-        "__builtin_object_size",
-        "__builtin_dynamic_object_size",
-        "__builtin_clear_padding",
-        "__builtin_has_attribute",
-        "__builtin_speculation_safe_value",
-        "__is_aggregate",
-        "__is_array",
-        "__is_assignable",
-        "__is_base_of",
-        "__is_class",
-        "__is_constructible",
-        "__is_convertible",
-        "__is_destructible",
-        "__is_empty",
-        "__is_enum",
-        "__is_final",
-        "__is_floating_point",
-        "__is_function",
-        "__is_integral",
-        "__is_literal_type",
-        "__is_member_function_pointer",
-        "__is_member_object_pointer",
-        "__is_member_pointer",
-        "__is_nothrow_assignable",
-        "__is_nothrow_constructible",
-        "__is_nothrow_destructible",
-        "__is_object",
-        "__is_pod",
-        "__is_pointer",
-        "__is_polymorphic",
-        "__is_reference",
-        "__is_same",
-        "__is_scalar",
-        "__is_signed",
-        "__is_standard_layout",
-        "__is_trivial",
-        "__is_trivially_assignable",
-        "__is_trivially_constructible",
-        "__is_trivially_copyable",
-        "__is_trivially_destructible",
-        "__is_union",
-        "__is_unsigned",
-        "__is_void",
-        "__is_volatile",
-        "__has_unique_object_representations",
-        "__is_layout_compatible",
-        "__is_pointer_interconvertible_base_of",
-        "__is_corresponding_member"};
-    for (const auto candidate : names) {
-        if (candidate == name) {
-            return true;
-        }
+bool parseCppAttributeName(const std::vector<Token>& tokens,
+                           std::size_t openIndex, std::string& name,
+                           std::size_t& closeIndex) {
+    if (openIndex >= tokens.size() || !tokens[openIndex].isPunct("(")) {
+        return false;
     }
-    return false;
-}
-
-bool gccAttributeAvailable(std::string_view name) {
-    static const std::string_view names[] = {
-        "always_inline",       "noinline",          "noreturn",
-        "pure",                "const",             "flatten",
-        "hot",                 "cold",              "deprecated",
-        "unused",              "used",              "warn_unused_result",
-        "malloc",              "alloc_size",        "alloc_align",
-        "nonnull",             "returns_nonnull",   "format",
-        "format_arg",          "visibility",        "weak",
-        "alias",               "section",           "constructor",
-        "destructor",          "cleanup",           "packed",
-        "aligned",             "may_alias",         "access",
-        "fallthrough",         "nodiscard",         "maybe_unused",
-        "no_unique_address",   "likely",            "unlikely",
-        "assume",              "target",            "optimize",
-        "no_sanitize",         "no_sanitize_address",
-        "no_sanitize_undefined", "no_stack_protector", "error",
-        "warning",             "transparent_union", "vector_size",
-        "mode",                "artificial",        "gnu_inline",
-        "leaf",                "noclone",           "noipa",
-        "returns_twice",       "sentinel",          "nonstring",
-        "designated_init",     "copy",              "symver",
-        "retain",              "patchable_function_entry"};
-    for (const auto candidate : names) {
-        if (candidate == name) {
-            return true;
-        }
+    std::size_t index = openIndex + 1;
+    while (index < tokens.size() && tokens[index].isTrivia()) {
+        ++index;
     }
-    return false;
+    if (index >= tokens.size() ||
+        tokens[index].kind != TokenKind::Identifier) {
+        return false;
+    }
+    name = tokens[index].text;
+    ++index;
+    while (index + 2 < tokens.size() &&
+           tokens[index].isPunct("::") &&
+           tokens[index + 1].kind == TokenKind::Identifier) {
+        name += "::";
+        name += tokens[index + 1].text;
+        index += 2;
+    }
+    while (index < tokens.size() && tokens[index].isTrivia()) {
+        ++index;
+    }
+    if (index >= tokens.size() || !tokens[index].isPunct(")")) {
+        return false;
+    }
+    closeIndex = index;
+    return true;
 }
 
 bool isAlternativeOperator(std::string_view name) {
@@ -725,7 +595,7 @@ Preprocessor::Preprocessor(PreprocessorOptions options)
         PchCacheContext context;
         context.compiler = pathFromUtf8(compilerPath_);
         context.compilerVersion = compilerVersion_;
-        context.toolVersion = "2.4.1";
+        context.toolVersion = "2.5.0";
         context.standard = options_.standard;
         context.inputCharset = options_.inputCharset;
         context.executionCharset = options_.executionCharset;
@@ -1825,17 +1695,15 @@ bool Preprocessor::evaluateCondition(const std::vector<Token>& expression,
         }
 
         if (token.isIdentifier("__has_cpp_attribute")) {
-            std::size_t j = i + 1;
-            if (j + 2 < definedProcessed.size() &&
-                definedProcessed[j].isPunct("(") &&
-                definedProcessed[j + 1].kind == TokenKind::Identifier &&
-                definedProcessed[j + 2].isPunct(")")) {
-                const int value =
-                    SpecialOperator::hasCppAttributeValue(
-                        definedProcessed[j + 1].text);
+            std::string attributeName;
+            std::size_t close = 0;
+            if (parseCppAttributeName(definedProcessed, i + 1,
+                                      attributeName, close)) {
+                const int value = gccCppAttributeValue(
+                    attributeName, options_.standard);
                 specialProcessed.push_back(
                     makeNumber(std::to_string(value), token.loc));
-                i = j + 3;
+                i = close + 1;
                 continue;
             }
             diagnostics_.error(token.loc,
@@ -1880,9 +1748,15 @@ bool Preprocessor::evaluateCondition(const std::vector<Token>& expression,
                         value = gccBuiltinAvailable(argument) ? 1 : 0;
                     } else if (token.text == "__has_attribute") {
                         value = gccAttributeAvailable(argument) ? 1 : 0;
+                    } else if (token.text == "__has_feature" ||
+                               token.text == "__has_extension") {
+                        value = gccFeatureAvailable(
+                                    argument,
+                                    token.text == "__has_extension",
+                                    options_.standard)
+                                    ? 1
+                                    : 0;
                     }
-                    // __has_feature / __has_extension / __has_warning /
-                    // __has_declspec_attribute are 0 under GCC.
                     specialProcessed.push_back(
                         makeNumber(std::to_string(value), token.loc));
                     i = close + 1;
@@ -1930,15 +1804,14 @@ bool Preprocessor::evaluateCondition(const std::vector<Token>& expression,
             continue;
         }
         if (token.isIdentifier("__has_cpp_attribute")) {
-            std::size_t j = i + 1;
-            if (j + 2 < expanded.size() && expanded[j].isPunct("(") &&
-                expanded[j + 1].kind == TokenKind::Identifier &&
-                expanded[j + 2].isPunct(")")) {
-                const int value = SpecialOperator::hasCppAttributeValue(
-                    expanded[j + 1].text);
+            std::string attributeName;
+            std::size_t close = 0;
+            if (parseCppAttributeName(expanded, i + 1, attributeName, close)) {
+                const int value = gccCppAttributeValue(
+                    attributeName, options_.standard);
                 postExpansion.push_back(
                     makeNumber(std::to_string(value), token.loc));
-                i = j + 3;
+                i = close + 1;
                 continue;
             }
             postExpansion.push_back(makeNumber("0", token.loc));
@@ -1978,6 +1851,14 @@ bool Preprocessor::evaluateCondition(const std::vector<Token>& expression,
                         value = gccBuiltinAvailable(argument) ? 1 : 0;
                     } else if (token.text == "__has_attribute") {
                         value = gccAttributeAvailable(argument) ? 1 : 0;
+                    } else if (token.text == "__has_feature" ||
+                               token.text == "__has_extension") {
+                        value = gccFeatureAvailable(
+                                    argument,
+                                    token.text == "__has_extension",
+                                    options_.standard)
+                                    ? 1
+                                    : 0;
                     }
                     postExpansion.push_back(
                         makeNumber(std::to_string(value), token.loc));
