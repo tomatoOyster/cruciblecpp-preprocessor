@@ -1,5 +1,14 @@
 # Changelog
 
+## V2.5.2 — 2026-11-12
+
+### 改进
+
+- `__has_include` / `__has_include_next` 找到的头文件现在会写入 `-MD` depfile，即使该头只被探测、从未真正 `#include`，与 GCC 一致。
+- `tests/test_include/main.h` 增加只探测不包含的 `probe.h` 回归用例。
+- 新增 `compile_depfile` 测试，预处理出的 depfile 场景输出会直接交给 GCC 编译。
+- CTest 为 56 个。
+
 ## V2.5.1 — 2026-11-12
 
 ### 修复
@@ -9,7 +18,7 @@
 - `u'非 BMP'`：产生 GCC 相同的 error，并取 UTF-16 低 surrogate。
 - 超过 32 位的 `\x`：保留低 32 位，按目标字符宽度截断并产生 warning，不再提前钳制成 `0xFFFFFFFF`。
 - 新增 `char_edge_values` 集成测试；删除三个基于旧错误假设的负面测试。
-- CTest 为 55 个。
+- CTest 为 56 个。
 
 ## V2.5.0 — 2026-11-12
 
@@ -22,7 +31,7 @@
   - 53 个 `__has_feature` / `__has_extension` C++20 特性。
 - 支持 `gnu::` 作用域 C++ 属性，例如 `__has_cpp_attribute(gnu::always_inline)`。
 - `__has_feature` / `__has_extension` 不再是常量 0。
-- 新增 `tests/test_gcc_has.cpp`，CTest 增加到 55 个。
+- 新增 `tests/test_gcc_has.cpp`，CTest 增加到 56 个。
 - 新增 `tools/generate_gcc_has_data.py`，可从 GCC 15.2 源码和编译器重新生成数据。
 
 ## V2.4.1 — 2026-11-12
@@ -32,7 +41,7 @@
 - PCH 缓存命中时更新 artifact 访问时间，LRU/天数清理现在按真实访问时间工作。
 - 临时文件路径加入进程 ID，避免并发进程生成相同临时文件名。
 - 删除未使用的缓存统计合并函数。
-- 全量回归仍为 55/55 CTest 通过。
+- 全量回归仍为 56/56 CTest 通过。
 
 ## V2.4.0 — 2026-11-12
 
@@ -45,7 +54,7 @@
 - 原子写入、manifest 可复现、LRU/容量/天数清理和孤儿文件清理。
 - 每次运行的 hit/miss/stale/corrupt/evicted/lock/bytes/hitRate 统计 JSON。
 - PCH Make 依赖文件：PCH 依赖头文件、编译器、选项 stamp 和 manifest。
-- CTest 增加到 55 个，新增缓存命中、失效、损坏、锁、清理、可复现和依赖测试。
+- CTest 增加到 56 个，新增缓存命中、失效、损坏、锁、清理、可复现和依赖测试。
 
 ## V2.3.0 — 2026-11-12
 

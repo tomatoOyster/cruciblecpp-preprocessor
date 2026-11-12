@@ -216,7 +216,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (arg == "--version") {
-            std::cout << "cruciblecpp-preprocessor 2.5.1\n";
+            std::cout << "cruciblecpp-preprocessor 2.5.2\n";
             return 0;
         }
         if (arg == "-o" || arg == "--output") {

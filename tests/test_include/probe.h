@@ -1,0 +1,6 @@
+#ifndef TEST_INCLUDE_PROBE_H
+#define TEST_INCLUDE_PROBE_H
+
+#define PROBE_VALUE 1
+
+#endif

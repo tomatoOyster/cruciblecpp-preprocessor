@@ -44,7 +44,7 @@
 | `__has_cpp_attribute` | 标准属性 + `gnu::` 完整表 | 100% |
 | pragma | `once`、`push/pop`、`message`、`system_header`、未知透传 | 70%–80% |
 | 标准库头 | `<vector>`、`<string>`、`<iostream>`、`<filesystem>`、`<chrono>` 等已验证 | 85% |
-| CMake depfile | `-MD/-MF/-MT/-MQ`，Ninja 增量实测 | 90% |
+| CMake depfile | `-MD/-MF/-MT/-MQ`，含 `__has_include` 探测，Ninja 增量实测 | 95% |
 | PCH 策略/缓存 | `.gch` 策略、artifact 缓存、并发锁、失效/清理/统计、PCH depfile | 90% |
 | PCH 二进制 | 不解析 GCC `.gch` 内容 | 0%（有意不实现） |
 | 行号/诊断 | 补了 splice 物理行映射 | 85% |
@@ -71,7 +71,7 @@
   - 支持 `<a//b.h>`；
   - 支持带空格的 header name；
   - 注释夹在 `#include` 与 header name 之间仍是边界；
-- depfile 记录 quote/angle 头。
+- depfile 记录 quote/angle 头，也记录 `__has_include` / `__has_include_next` 探测到的头。
 
 ### 2.2 GCC 15.2 profile
 
@@ -273,7 +273,7 @@
 
 - 标准库头可以预处理并编译；
 - `<>` 搜索、完整 `__has_*`、system_header、depfile 都已打通；
-- 55 个 CTest 通过；
+- 56 个 CTest 通过；
 - CMake + Ninja 的标准头项目实测通过；
 - 不传 `-isystem` 的自动发现标准头测试通过。
 

@@ -105,6 +105,10 @@ add_test(NAME check_depfile
     COMMAND ${CMAKE_COMMAND} -DDEPFILE=${DEPFILE_OUTPUT}
             -P ${CMAKE_CURRENT_SOURCE_DIR}/check_depfile.cmake)
 set_tests_properties(check_depfile PROPERTIES DEPENDS preprocess_depfile)
+add_test(NAME compile_depfile
+    COMMAND ${CMAKE_CXX_COMPILER} ${TEST_COMPILE_FLAGS}
+            ${CMAKE_CURRENT_BINARY_DIR}/depfile.i)
+set_tests_properties(compile_depfile PROPERTIES DEPENDS preprocess_depfile)
 
 # Verify that emitted line markers are accepted by the compiler.
 set(LINE_MARKER_OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/line_markers.i)

@@ -19,3 +19,7 @@ endif()
 if(NOT content MATCHES "sub\\.h")
     message(FATAL_ERROR "sub.h missing from depfile:\n${content}")
 endif()
+
+if(NOT content MATCHES "probe\\.h")
+    message(FATAL_ERROR "__has_include probe.h missing from depfile:\n${content}")
+endif()

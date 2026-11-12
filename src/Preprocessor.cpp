@@ -595,7 +595,7 @@ Preprocessor::Preprocessor(PreprocessorOptions options)
         PchCacheContext context;
         context.compiler = pathFromUtf8(compilerPath_);
         context.compilerVersion = compilerVersion_;
-        context.toolVersion = "2.5.1";
+        context.toolVersion = "2.5.2";
         context.standard = options_.standard;
         context.inputCharset = options_.inputCharset;
         context.executionCharset = options_.executionCharset;
@@ -1686,10 +1686,15 @@ bool Preprocessor::evaluateCondition(const std::vector<Token>& expression,
                 ++j;
             }
 
-            const bool found = includes_->exists(header, headerAngled,
-                                                  currentPath_, next);
+            const auto resolved = includes_->resolve(
+                header, headerAngled, currentPath_, next);
+            if (resolved.has_value()) {
+                // GCC records a header found by __has_include in the depfile
+                // even when it is only probed and never included.
+                recordDependency(*resolved);
+            }
             specialProcessed.push_back(
-                makeNumber(found ? "1" : "0", token.loc));
+                makeNumber(resolved.has_value() ? "1" : "0", token.loc));
             i = j;
             continue;
         }
@@ -1791,10 +1796,16 @@ bool Preprocessor::evaluateCondition(const std::vector<Token>& expression,
                 bool angled = false;
                 if (parseHeaderFromTokens(expanded, j, header, angled) &&
                     j < expanded.size() && expanded[j].isPunct(")")) {
-                    const bool found = includes_->exists(
+                    const auto resolved = includes_->resolve(
                         header, angled, currentPath_, next);
+                    if (resolved.has_value()) {
+                        // See the first __has_include pass: probes are
+                        // dependencies in GCC's depfile too.
+                        recordDependency(*resolved);
+                    }
                     postExpansion.push_back(
-                        makeNumber(found ? "1" : "0", token.loc));
+                        makeNumber(resolved.has_value() ? "1" : "0",
+                                   token.loc));
                     i = j + 1;
                     continue;
                 }

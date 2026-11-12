@@ -1,8 +1,8 @@
 # CrucibleCpp Preprocessor
 
-> **V2.5.1** — Windows x64 独立 C++ 预处理器，自动发现 PATH 中的 GCC 头文件目录，直接替代 `g++ -E` 的预处理步骤。
+> **V2.5.2** — Windows x64 独立 C++ 预处理器，自动发现 PATH 中的 GCC 头文件目录，直接替代 `g++ -E` 的预处理步骤。
 >
-> [下载 V2.5.1](https://github.com/tomatoOyster/cruciblecpp-preprocessor/releases/latest) · [Changelog](CHANGELOG.md)
+> [下载 V2.5.2](https://github.com/tomatoOyster/cruciblecpp-preprocessor/releases/latest) · [Changelog](CHANGELOG.md)
 
 一个用 C++20 实现的独立 C++ 预处理器，兼容矩阵锁定为：
 
@@ -524,7 +524,7 @@ CAT(, x)                  // x
 
 ## 测试
 
-当前包含 **55 个 CTest 用例**（正例会预处理后再用 GCC 编译，负例验证退出码）。
+当前包含 **56 个 CTest 用例**（正例会预处理后再用 GCC 编译，负例验证退出码）。
 
 测试覆盖：
 
@@ -561,7 +561,7 @@ CAT(, x)                  // x
 - 支持 `-funsigned-char` / `-fsigned-char`；`-funsigned-char` 同时定义 `__CHAR_UNSIGNED__`。
 - `#if` 字符常量的边界行为已按 GCC 15.2 / Windows x64 对齐：`u8` 多字节报 error 但仍取最后一个 UTF-8 code unit；`L` 非 BMP 报 warning 并取低 surrogate；`u` 非 BMP 报 error 并取低 surrogate；`\x` 超出目标宽度报 warning 并使用低位。
 - 引号和尖括号 include 都支持 Windows 反斜杠路径；`#include /*comment*/ <...>` 这类“注释夹在关键字和 header name 之间”的组合仍是边界。
-- depfile 记录实际处理的 quote/angle include，不记录 `__has_include` 探测。
+- depfile 记录实际处理的 quote/angle include，也记录 `__has_include` / `__has_include_next` 找到的探测头文件，与 GCC `-MD` 一致。
 - `#pragma GCC system_header` 会被消费，不写入 `.i`；系统头的完整警告抑制模型仍未实现。
 
 ## 许可证
