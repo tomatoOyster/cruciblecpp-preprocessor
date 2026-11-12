@@ -18,6 +18,12 @@
 #include <unordered_set>
 #include <utility>
 
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
+
 namespace crucible {
 namespace {
 
@@ -131,10 +137,19 @@ std::string makeEscape(std::string_view value, bool target) {
     return result;
 }
 
+unsigned long currentProcessId() {
+#ifdef _WIN32
+    return static_cast<unsigned long>(GetCurrentProcessId());
+#else
+    return static_cast<unsigned long>(getpid());
+#endif
+}
+
 std::string tempPathFor(const std::filesystem::path& target) {
     static std::uint64_t counter = 0;
     ++counter;
-    return pathText(target) + ".tmp." +
+    return pathText(target) + ".tmp." + std::to_string(currentProcessId()) +
+           "." +
            std::to_string(
                std::chrono::steady_clock::now().time_since_epoch().count()) +
            "." + std::to_string(counter);
@@ -558,20 +573,6 @@ bool PchCache::writeOptionsStamp(std::string_view key,
                            optionsHash() + "\n", error);
 }
 
-void PchCache::updateStats(const PchCacheStats& delta) {
-    stats_.lookups += delta.lookups;
-    stats_.hits += delta.hits;
-    stats_.misses += delta.misses;
-    stats_.stale += delta.stale;
-    stats_.corrupt += delta.corrupt;
-    stats_.errors += delta.errors;
-    stats_.created += delta.created;
-    stats_.updated += delta.updated;
-    stats_.evicted += delta.evicted;
-    stats_.lockWaits += delta.lockWaits;
-    stats_.lockTimeouts += delta.lockTimeouts;
-}
-
 bool PchCache::acquireLock(std::string_view key, Lock& lock) {
     const auto path = lockPath(key);
     const auto start = std::chrono::steady_clock::now();
@@ -753,6 +754,10 @@ PchCacheResult PchCache::observe(const std::filesystem::path& header,
         ++stats_.hits;
         result.status = PchCacheStatus::Hit;
         result.detail = "cache hit";
+        std::error_code accessError;
+        std::filesystem::last_write_time(
+            artifactPath(key), std::filesystem::file_time_type::clock::now(),
+            accessError);
         std::string error;
         if (!writeDependency(key, header, gch, error) ||
             !writeOptionsStamp(key, error)) {

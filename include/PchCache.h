@@ -113,7 +113,6 @@ private:
                          std::string& error) const;
     bool writeOptionsStamp(std::string_view key,
                            std::string& error) const;
-    void updateStats(const PchCacheStats& delta);
     void gc();
     std::uintmax_t entrySize(std::string_view key) const;
     bool acquireLock(std::string_view key, Lock& lock);
