@@ -18,6 +18,8 @@
 - include trace 增加 include 所在行号。
 - 新增 `#pragma GCC poison`（含 poisoned note）、`#pragma GCC dependency`（缺失 fatal、过期 warning）、`#pragma GCC target/optimize/visibility` 透传。
 - 继续对齐条件指令文案：`'#else' without '#if'`、`'#elif' after '#else'`、`#if with no expression`、`unterminated argument list invoking macro 'F'`。
+- 实现 `-Wundef`、`-Wunused-macros`、`-Wcomment`、`-Wtrigraphs`、`-Wdate-time`、`-Wexpansion-to-defined`、`-Wmultichar`、`-Wendif-labels`、`-Wbuiltin-macro-redefined`。
+- 诊断 warning 追加 `[-W...]`，`-Werror`/`#pragma diagnostic error` 使用 `[-Werror=...]`；新增 `-f[no-]diagnostics-show-option`。
 - 新增 `diagnostics` 集成测试，检查 caret、include trace、note、fatal、pragma 状态、system header、poison、dependency 和关闭 caret。
 - 新增宏重定义正例，预处理输出继续交给 GCC 编译。
 - CTest 为 62 个。

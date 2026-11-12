@@ -43,6 +43,7 @@ public:
     void setWarningsAsErrors(bool enabled) { warningsAsErrors_ = enabled; }
     void setMaxErrors(int max) { maxErrors_ = max; }
     void setShowCaret(bool enabled) { showCaret_ = enabled; }
+    void setShowOption(bool enabled) { showOption_ = enabled; }
     void setColor(bool enabled) { color_ = enabled; }
     void setSystemHeader(bool enabled) { systemHeader_ = enabled; }
     void setShowSystemWarnings(bool enabled) { showSystemWarnings_ = enabled; }
@@ -78,6 +79,7 @@ private:
     int errorCount_ = 0;
     bool warningsAsErrors_ = false;
     bool showCaret_ = true;
+    bool showOption_ = true;
     bool color_ = false;
     bool systemHeader_ = false;
     bool showSystemWarnings_ = false;
@@ -114,6 +116,7 @@ struct PreprocessorOptions {
     bool keepComments = false;
     bool trigraphs = false;
     bool showDiagnosticCaret = true;
+    bool showDiagnosticOption = true;
     bool colorDiagnostics = false;
     bool showSystemHeaderWarnings = false;
     std::unordered_map<std::string, Severity> diagnosticStates;
@@ -168,6 +171,7 @@ private:
                      bool systemHeader = false);
     void processTokenStream(std::shared_ptr<SourceFile> file);
     void checkPoisoned(const std::vector<Token>& tokens);
+    void warnUnusedMacros();
     bool processDirective(const std::vector<Token>& line,
                           std::size_t zeroBasedLine, bool& wroteOutput);
     bool processInclude(const std::vector<Token>& line, bool nextInclude,

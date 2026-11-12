@@ -363,9 +363,20 @@ g++ -std=c++20 -fsyntax-only output\hello.i
 -fno-diagnostics-color       关闭诊断颜色
 -fdiagnostics-show-caret     显示源码行和 caret（默认）
 -fno-diagnostics-show-caret  关闭源码行和 caret
+-fdiagnostics-show-option    显示 [-W...]（默认）
+-fno-diagnostics-show-option 关闭 [-W...]
 -W<name> / -Wno-<name>       启用/关闭单个 warning
 -Werror=<name>               单个 warning 视为 error
 -Wno-error=<name>            单个 warning 不升级为 error
+-Wall / -Wextra              常用 warning 组
+-Wundef                      #if 中未定义标识符
+-Wunused-macros              未使用的用户宏
+-Wcomment / -Wtrigraphs      注释/trigraph warning
+-Wdate-time                  __DATE__/__TIME__ warning
+-Wexpansion-to-defined       宏展开产生的 defined
+-Wmultichar                  多字符常量
+-Wendif-labels               #else/#endif 尾部 token
+-Wbuiltin-macro-redefined    重定义内置宏
 -Wsystem-headers             显示系统头 warning
 -Wno-system-headers          隐藏系统头 warning（默认）
 --strict                     未知 pragma 视为错误

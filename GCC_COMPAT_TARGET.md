@@ -47,7 +47,7 @@
 | CMake depfile | `-MD/-MF/-MT/-MQ`，含 `__has_include` 探测，Ninja 增量实测 | 95% |
 | PCH 策略/缓存 | `.gch` 策略、artifact 缓存、并发锁、失效/清理/统计、PCH depfile | 90% |
 | PCH 二进制 | 不解析 GCC `.gch` 内容 | 0%（有意不实现） |
-| 行号/诊断 | splice 物理行映射、源码行/caret、include trace | 90% |
+| 行号/诊断 | splice 物理行映射、源码行/caret、include trace、warning 选项 | 95% |
 | header-name 词法 | 直接 quote/angle；反斜杠/`//` 已支持并有测试 | 90% |
 | 真实项目 corpus | 只有小型标准头测试 | 30% |
 | fuzz / 资源上限 / 安全 | 基础限制，无 fuzz | 30% |
@@ -96,8 +96,10 @@
 - `#pragma once`；
 - `#pragma push_macro/pop_macro`；
 - `#pragma message`；
-- `#pragma GCC system_header` 被消费，不写进 `.i`；
-- `#pragma GCC diagnostic` 及其他未知 pragma 透传；
+- `#pragma GCC system_header` 抑制系统头 warning；
+- `#pragma GCC diagnostic push/pop/ignored/warning/error`；
+- `#pragma GCC poison`、`#pragma GCC dependency`；
+- `#pragma GCC target/optimize/visibility` 透传；
 - `_Pragma`。
 
 ### 2.5 CMake depfile

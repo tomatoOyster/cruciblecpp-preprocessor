@@ -93,12 +93,22 @@ std::optional<std::vector<Token>> SpecialOperator::expandBuiltin(
         return number(token.loc.line == 0 ? 1 : token.loc.line);
     }
     if (token.text == "__DATE__") {
+        diagnostics_.warning(
+            token.loc, "macro '__DATE__' might prevent reproducible builds",
+            "-Wdate-time");
         return string(date_);
     }
     if (token.text == "__TIME__") {
+        diagnostics_.warning(
+            token.loc, "macro '__TIME__' might prevent reproducible builds",
+            "-Wdate-time");
         return string(time_);
     }
     if (token.text == "__TIMESTAMP__") {
+        diagnostics_.warning(
+            token.loc,
+            "macro '__TIMESTAMP__' might prevent reproducible builds",
+            "-Wdate-time");
         return string(date_ + " " + time_);
     }
     if (token.text == "__COUNTER__") {

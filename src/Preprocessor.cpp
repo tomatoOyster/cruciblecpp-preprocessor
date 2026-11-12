@@ -487,7 +487,14 @@ void printIncludeTrace(const std::vector<IncludeFrame>& stack,
 
 } // namespace
 
-DiagnosticSink::DiagnosticSink(int maxErrors) : maxErrors_(maxErrors) {}
+DiagnosticSink::DiagnosticSink(int maxErrors) : maxErrors_(maxErrors) {
+    // GCC keeps these preprocessor warnings off unless explicitly enabled.
+    diagnosticState_["-Wundef"] = Severity::Note;
+    diagnosticState_["-Wunused-macros"] = Severity::Note;
+    diagnosticState_["-Wdate-time"] = Severity::Note;
+    diagnosticState_["-Wexpansion-to-defined"] = Severity::Note;
+    diagnosticState_["-Wvariadic-macros"] = Severity::Note;
+}
 
 namespace {
 
@@ -545,6 +552,7 @@ bool DiagnosticSink::warningEnabled(std::string_view option) const {
 
 void DiagnosticSink::report(Severity severity, const SourceLocation& loc,
                             std::string message, std::string_view option) {
+    const bool wasWarning = severity == Severity::Warning;
     bool explicitWarning = false;
     if (severity == Severity::Warning) {
         const std::string key = normalizeDiagnosticOption(option);
@@ -593,7 +601,16 @@ void DiagnosticSink::report(Severity severity, const SourceLocation& loc,
     if (color_) {
         std::cerr << "\033[0m";
     }
-    std::cerr << ' ' << message << '\n';
+    std::cerr << ' ' << message;
+    if (showOption_ && !option.empty()) {
+        std::string shown = normalizeDiagnosticOption(option);
+        if (wasWarning && severity == Severity::Error &&
+            shown.rfind("-W", 0) == 0) {
+            shown = "-Werror=" + shown.substr(2);
+        }
+        std::cerr << " [" << shown << ']';
+    }
+    std::cerr << '\n';
 
     if (showCaret_) {
         printSourceContext(loc, color_);
@@ -621,6 +638,7 @@ Preprocessor::Preprocessor(PreprocessorOptions options)
       writer_(std::make_unique<OutputWriter>(options_.lineMarkers)) {
     diagnostics_.setWarningsAsErrors(options_.warningsAsErrors);
     diagnostics_.setShowCaret(options_.showDiagnosticCaret);
+    diagnostics_.setShowOption(options_.showDiagnosticOption);
     diagnostics_.setColor(options_.colorDiagnostics);
     diagnostics_.setShowSystemWarnings(options_.showSystemHeaderWarnings);
     for (const auto& [option, state] : options_.diagnosticStates) {
@@ -1014,6 +1032,7 @@ int Preprocessor::run() {
     if (!diagnostics_.limitReached()) {
         processFile(options_.input, false);
     }
+    warnUnusedMacros();
 
     writer_->ensureNewline();
     if (!writeDependencies()) {
@@ -1469,6 +1488,24 @@ bool Preprocessor::handlePragmaText(std::string_view text,
     return true;
 }
 
+void Preprocessor::warnUnusedMacros() {
+    if (!diagnostics_.warningEnabled("-Wunused-macros")) {
+        return;
+    }
+    for (const auto& [name, definition] : macros_->all()) {
+        if (definition.isBuiltin || macros_->isUsed(name) ||
+            name.rfind("__", 0) == 0 ||
+            (definition.definitionLoc.file &&
+             includes_->isSystemPath(pathFromUtf8(
+                 definition.definitionLoc.file->displayPath)))) {
+            continue;
+        }
+        diagnostics_.warning(definition.definitionLoc,
+                             "macro '" + name + "' is not used",
+                             "-Wunused-macros");
+    }
+}
+
 void Preprocessor::checkPoisoned(const std::vector<Token>& tokens) {
     for (const auto& token : tokens) {
         if (token.kind != TokenKind::Identifier) {
@@ -1547,7 +1584,7 @@ bool Preprocessor::processDirective(const std::vector<Token>& inputLine,
         processDefine(line, loc);
     } else if (directive == "undef") {
         if (line.size() < 3 || line[2].kind != TokenKind::Identifier) {
-            diagnostics_.error(loc, "expected a macro name after #undef");
+            diagnostics_.error(loc, "no macro name given in '#undef' directive");
         } else {
             macros_->undef(line[2].text);
         }
@@ -1570,14 +1607,15 @@ bool Preprocessor::processDirective(const std::vector<Token>& inputLine,
             return true;
         }
         if (expanded.size() > 2) {
-            diagnostics_.warning(loc, "extra tokens after #line",
+            diagnostics_.warning(loc, "extra tokens at end of '#line' directive",
                                  "-Wextra-tokens");
         }
         std::string newFile = currentPresumedFile_;
         if (expanded.size() >= 2) {
             if (expanded[1].kind != TokenKind::StringLiteral) {
                 diagnostics_.error(expanded[1].loc,
-                                   "#line file name must be a string literal");
+                                   "'" + expanded[1].text +
+                                       "' is not a valid filename");
             } else {
                 newFile = stripQuotes(expanded[1].text);
             }
@@ -1611,7 +1649,7 @@ bool Preprocessor::processDirective(const std::vector<Token>& inputLine,
 bool Preprocessor::processDefine(const std::vector<Token>& line,
                                  const SourceLocation& loc, bool fromProfile) {
     if (line.size() < 3 || line[2].kind != TokenKind::Identifier) {
-        diagnostics_.error(loc, "expected a macro name after #define");
+        diagnostics_.error(loc, "no macro name given in '#define' directive");
         return false;
     }
 
@@ -1701,8 +1739,8 @@ bool Preprocessor::processConditional(const std::vector<Token>& line,
     }
     if (directive == "ifdef" || directive == "ifndef") {
         if (line.size() < 3 || line[2].kind != TokenKind::Identifier) {
-            diagnostics_.error(loc, "#" + directive +
-                                        " expects a macro name");
+            diagnostics_.error(loc, "no macro name given in '#" +
+                                        directive + "' directive");
             conditionals_->onIf({}, loc);
             return false;
         }
@@ -1715,8 +1753,8 @@ bool Preprocessor::processConditional(const std::vector<Token>& line,
     }
     if (directive == "elifdef" || directive == "elifndef") {
         if (line.size() < 3 || line[2].kind != TokenKind::Identifier) {
-            diagnostics_.error(loc, "#" + directive +
-                                        " expects a macro name");
+            diagnostics_.error(loc, "no macro name given in '#" +
+                                        directive + "' directive");
             conditionals_->onElif({}, loc);
             return false;
         }
@@ -1725,16 +1763,16 @@ bool Preprocessor::processConditional(const std::vector<Token>& line,
     }
     if (directive == "else") {
         if (line.size() > 2) {
-            diagnostics_.warning(loc, "extra tokens after #else",
-                                 "-Wextra-tokens");
+            diagnostics_.warning(loc, "extra tokens at end of '#else' directive",
+                                 "-Wendif-labels");
         }
         conditionals_->onElse(loc);
         return true;
     }
     if (directive == "endif") {
         if (line.size() > 2) {
-            diagnostics_.warning(loc, "extra tokens after #endif",
-                                 "-Wextra-tokens");
+            diagnostics_.warning(loc, "extra tokens at end of '#endif' directive",
+                                 "-Wendif-labels");
         }
         conditionals_->onEndif(loc);
         return true;
@@ -1803,7 +1841,8 @@ bool Preprocessor::processInclude(const std::vector<Token>& line,
                                   bool nextInclude,
                                   const SourceLocation& loc) {
     if (line.size() < 3) {
-        diagnostics_.error(loc, "expected a header name after #include");
+        diagnostics_.error(
+            loc, "#include expects \"FILENAME\" or <FILENAME>");
         return false;
     }
 
@@ -1870,14 +1909,14 @@ bool Preprocessor::processInclude(const std::vector<Token>& line,
             return false;
         }
         if (expandedIndex != expanded.size()) {
-            diagnostics_.warning(loc, "extra tokens after #include",
+            diagnostics_.warning(loc, "extra tokens at end of '#include' directive",
                              "-Wextra-tokens");
         }
         index = line.size();
     }
 
     if (index < line.size()) {
-        diagnostics_.warning(loc, "extra tokens after #include",
+        diagnostics_.warning(loc, "extra tokens at end of '#include' directive",
                              "-Wextra-tokens");
     }
 
@@ -2229,10 +2268,29 @@ bool Preprocessor::evaluateCondition(const std::vector<Token>& expression,
     if (containsDefined) {
         // GCC/Windows SDK headers (notably MinGW's __INTRINSIC_PROLOG)
         // produce `defined` through macro expansion. Evaluating it is the
-        // useful, compatible behavior; do not emit a warning per occurrence.
+        // useful, compatible behavior.
+        diagnostics_.warning(
+            loc, "this use of 'defined' may not be portable",
+            "-Wexpansion-to-defined");
         std::vector<Token> secondPass;
         replaceDefined(expanded, isDefined, secondPass, diagnostics_);
         expanded = std::move(secondPass);
+    }
+
+    for (const auto& token : expanded) {
+        if (token.kind != TokenKind::Identifier ||
+            token.text == "true" || token.text == "false" ||
+            token.text == "defined" ||
+            isAlternativeOperator(token.text) ||
+            isGccDefinedOperator(token.text)) {
+            continue;
+        }
+        if (!macros_->contains(token.text)) {
+            diagnostics_.warning(
+                token.loc,
+                "'" + token.text + "' is not defined, evaluates to '0'",
+                "-Wundef");
+        }
     }
 
     std::vector<Token> expressionTokens;

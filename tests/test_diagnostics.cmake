@@ -200,3 +200,45 @@ endif()
 if(error MATCHES "unknown-pragma|ignoring #pragma GCC")
     message(FATAL_ERROR "known GCC pragma was misdiagnosed:\n${error}")
 endif()
+
+# Default warnings and explicit -W controls.
+execute_process(
+    COMMAND "${PREPROCESSOR}" -P "${SOURCE_DIR}/diagnostics/warnings.cpp"
+            -o "${work}/warnings_default.i"
+    RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error)
+if(NOT result EQUAL 0)
+    message(FATAL_ERROR "warning fixture failed:\n${error}")
+endif()
+if(NOT error MATCHES "'/\\*' within comment")
+    message(FATAL_ERROR "missing -Wcomment warning:\n${error}")
+endif()
+if(NOT error MATCHES "trigraph .*ignored")
+    message(FATAL_ERROR "missing -Wtrigraphs warning:\n${error}")
+endif()
+
+execute_process(
+    COMMAND "${PREPROCESSOR}" -P -Wundef -Wunused-macros -Wdate-time
+            "${SOURCE_DIR}/diagnostics/warnings.cpp"
+            -o "${work}/warnings_all.i"
+    RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error)
+foreach(pattern
+        "'UNDEFINED_W' is not defined"
+        "macro 'UNUSED_W' is not used"
+        "macro '__DATE__' might prevent reproducible builds")
+    if(NOT error MATCHES "${pattern}")
+        message(FATAL_ERROR "missing warning '${pattern}':\n${error}")
+    endif()
+endforeach()
+
+execute_process(
+    COMMAND "${PREPROCESSOR}" -P -Wno-comment -Wno-trigraphs -Wno-undef
+            -Wno-unused-macros -Wno-date-time
+            "${SOURCE_DIR}/diagnostics/warnings.cpp"
+            -o "${work}/warnings_none.i"
+    RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error)
+if(NOT result EQUAL 0)
+    message(FATAL_ERROR "warning suppression failed:\n${error}")
+endif()
+if(error MATCHES "within comment|trigraph|not defined|is not used|reproducible builds")
+    message(FATAL_ERROR "a suppressed warning was emitted:\n${error}")
+endif()

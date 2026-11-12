@@ -158,6 +158,8 @@ void printUsage(std::ostream& out) {
            "  -fno-diagnostics-color       Disable diagnostic colors\n"
            "  -fdiagnostics-show-caret     Show source line and caret (default)\n"
            "  -fno-diagnostics-show-caret  Disable source line and caret\n"
+           "  -fdiagnostics-show-option    Append [-W...] (default)\n"
+           "  -fno-diagnostics-show-option Do not append [-W...]\n"
            "  --strict                     Treat unknown pragmas as errors\n"
            "  --drop-unknown-pragmas       Drop unknown #pragma directives\n"
            "  --no-output-on-error         Do not write output after an error\n"
@@ -318,6 +320,14 @@ int main(int argc, char** argv) {
             options.showDiagnosticCaret = false;
             continue;
         }
+        if (arg == "-fdiagnostics-show-option") {
+            options.showDiagnosticOption = true;
+            continue;
+        }
+        if (arg == "-fno-diagnostics-show-option") {
+            options.showDiagnosticOption = false;
+            continue;
+        }
         if (arg == "-fno-diagnostics-color") {
             options.colorDiagnostics = false;
             colorSpecified = true;
@@ -439,6 +449,25 @@ int main(int argc, char** argv) {
         }
         if (arg == "-Werror") {
             options.warningsAsErrors = true;
+            continue;
+        }
+        if (arg == "-Wno-error") {
+            options.warningsAsErrors = false;
+            continue;
+        }
+        if (arg == "-Wall") {
+            for (const char* option :
+                 {"-Wcomment", "-Wendif-labels", "-Wmultichar",
+                  "-Wtrigraphs", "-Wunknown-pragmas", "-Wpragmas",
+                  "-Wcpp", "-Winvalid-pch"}) {
+                options.diagnosticStates[option] = crucible::Severity::Warning;
+            }
+            continue;
+        }
+        if (arg == "-Wextra" || arg == "-Wpedantic" || arg == "-pedantic") {
+            options.diagnosticStates[arg == "-Wextra" ? "-Wextra"
+                                                       : "-Wpedantic"] =
+                crucible::Severity::Warning;
             continue;
         }
         if (arg == "-Wsystem-headers") {

@@ -642,6 +642,9 @@ std::vector<Token> MacroExpander::expand(const std::vector<Token>& input) {
         }
 
         const MacroDefinition* macro = registry_.find(token.text);
+        if (macro) {
+            registry_.markUsed(token.text);
+        }
         if (!macro) {
             if (builtinHandler_) {
                 if (auto builtin = builtinHandler_(token)) {

@@ -6,6 +6,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace crucible {
@@ -29,6 +30,10 @@ public:
     bool undef(std::string_view name);
     const MacroDefinition* find(std::string_view name) const;
     bool contains(std::string_view name) const;
+    void markUsed(std::string_view name) { used_.insert(std::string(name)); }
+    bool isUsed(std::string_view name) const {
+        return used_.find(std::string(name)) != used_.end();
+    }
 
     void pushMacro(std::string_view name);
     void popMacro(std::string_view name, DiagnosticSink& diagnostics);
@@ -42,6 +47,7 @@ public:
 
 private:
     std::unordered_map<std::string, MacroDefinition> macros_;
+    std::unordered_set<std::string> used_;
     std::unordered_map<std::string,
                        std::vector<std::optional<MacroDefinition>>> pushed_;
 };

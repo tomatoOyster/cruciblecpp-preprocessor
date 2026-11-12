@@ -136,6 +136,40 @@ std::vector<Token> Tokenizer::tokenize(
 
     const std::string& s = file->text;
     const std::size_t n = s.size();
+
+    if (diagnostics) {
+        std::uint32_t scanLine = 1;
+        std::size_t lineStart = 0;
+        for (std::size_t p = 0; p + 2 < n; ++p) {
+            if (s[p] == '\n') {
+                ++scanLine;
+                lineStart = p + 1;
+                continue;
+            }
+            if (s[p] != '?' || s[p + 1] != '?') {
+                continue;
+            }
+            char spelling = s[p + 2];
+            if (spelling != '=' && spelling != '/' && spelling != '\'' &&
+                spelling != '(' && spelling != ')' && spelling != '!' &&
+                spelling != '<' && spelling != '>' && spelling != '-') {
+                continue;
+            }
+            SourceLocation loc;
+            loc.file = file;
+            loc.line = scanLine;
+            loc.column = static_cast<std::uint32_t>(p - lineStart + 1);
+            loc.offset = p;
+            std::string trigraph = "??";
+            trigraph.push_back(spelling);
+            diagnostics->warning(
+                loc,
+                "trigraph '" + trigraph +
+                    "' ignored, use '-trigraphs' to enable",
+                "-Wtrigraphs");
+        }
+    }
+
     std::size_t i = 0;
     std::uint32_t line = 1;
     std::uint32_t column = 1;
@@ -291,8 +325,20 @@ std::vector<Token> Tokenizer::tokenize(
             std::uint32_t currentColumn = column;
             std::uint32_t segmentLine = line;
             std::uint32_t segmentColumn = column;
+            bool nestedCommentWarned = false;
 
             while (k < j) {
+                if (!nestedCommentWarned && diagnostics && s[k] == '/' &&
+                    k + 1 < j && s[k + 1] == '*') {
+                    SourceLocation loc;
+                    loc.file = file;
+                    loc.line = currentLine;
+                    loc.column = currentColumn;
+                    loc.offset = k;
+                    diagnostics->warning(loc, "'/*' within comment",
+                                         "-Wcomment");
+                    nestedCommentWarned = true;
+                }
                 if (s[k] == '\n') {
                     if (keepComments && segmentStart < k) {
                         tokens.push_back(makeToken(

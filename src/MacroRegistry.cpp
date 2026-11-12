@@ -155,12 +155,14 @@ bool MacroRegistry::define(const MacroDefinition& definition,
         if (definitionsEquivalent(it->second, definition)) {
             return true;
         }
-        const bool showWarning =
-            diagnostics.warningEnabled("-Wmacro-redefined");
+        const std::string warningOption =
+            it->second.isBuiltin ? "-Wbuiltin-macro-redefined"
+                                 : "-Wmacro-redefined";
+        const bool showWarning = diagnostics.warningEnabled(warningOption);
         if (showWarning) {
             diagnostics.warning(definition.definitionLoc,
                                 "'" + definition.name + "' redefined",
-                                "-Wmacro-redefined");
+                                warningOption);
             diagnostics.note(
                 it->second.definitionLoc,
                 "this is the location of the previous definition");

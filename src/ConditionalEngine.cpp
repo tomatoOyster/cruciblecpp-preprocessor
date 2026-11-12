@@ -948,7 +948,11 @@ private:
             // (u8 multi-byte, char16_t non-BMP) still produce a value and do
             // not force the condition to false.
             for (const auto& warning : warnings) {
-                diagnostics_.warning(token.loc, warning, "-Woverflow");
+                const bool multichar =
+                    warning.find("multi-character") != std::string::npos;
+                diagnostics_.warning(token.loc, warning,
+                                     multichar ? "-Wmultichar"
+                                               : "-Woverflow");
             }
             for (const auto& diagnostic : errors) {
                 diagnostics_.error(token.loc, diagnostic);
