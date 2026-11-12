@@ -6,3 +6,6 @@ output/*.tmp
 *.obj
 *.exe
 *.d
+__pycache__/
+*.pyc
+
