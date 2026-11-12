@@ -145,6 +145,10 @@ add_negative_case(error_directive error_directive.cpp)
 add_negative_case(unterminated_string unterminated_string.cpp)
 add_negative_case(missing_angle_include missing_angle_include.cpp)
 add_negative_case(nostdinc_angle nostdinc_angle.cpp -nostdinc)
-add_negative_case(wide_non_bmp wide_non_bmp.cpp)
-add_negative_case(char16_non_bmp char16_non_bmp.cpp)
-add_negative_case(u8_multibyte u8_multibyte.cpp)
+
+add_test(NAME char_edge_values
+    COMMAND ${CMAKE_COMMAND}
+            -DPREPROCESSOR=$<TARGET_FILE:cruciblecpp-preprocessor>
+            -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+            -DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/test_char_edges.cmake)

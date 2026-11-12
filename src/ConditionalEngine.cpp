@@ -237,10 +237,11 @@ void appendUtf8(std::vector<std::uint32_t>& units, std::uint32_t cp) {
 }
 
 struct EscapeValue {
-    std::uint32_t value = 0;
+    std::uint64_t value = 0;
     bool universal = true;
     bool hexadecimal = false;
     bool octal = false;
+    bool overflow = false;
 };
 
 bool decodeEscape(std::string_view text, std::size_t& i, EscapeValue& out,
@@ -314,7 +315,7 @@ bool decodeEscape(std::string_view text, std::size_t& i, EscapeValue& out,
     case 'x': {
         out.hexadecimal = true;
         out.universal = false;
-        std::uint64_t result = 0;
+        std::uint32_t result = 0;
         bool any = false;
         while (i < text.size()) {
             const char h = text[i];
@@ -329,11 +330,14 @@ bool decodeEscape(std::string_view text, std::size_t& i, EscapeValue& out,
             if (digit < 0) {
                 break;
             }
-            if (result > 0x0FFFFFFFULL) {
-                result = 0xFFFFFFFFULL;
-            } else {
-                result = result * 16 + static_cast<std::uint64_t>(digit);
+            // Keep the low 32 bits while remembering that the source value
+            // exceeded the range. GCC diagnoses the overflow but still uses
+            // these low bits for U'\x...'.
+            if (result > (0xFFFFFFFFu - static_cast<std::uint32_t>(digit)) /
+                             16u) {
+                out.overflow = true;
             }
+            result = result * 16u + static_cast<std::uint32_t>(digit);
             any = true;
             ++i;
         }
@@ -341,8 +345,7 @@ bool decodeEscape(std::string_view text, std::size_t& i, EscapeValue& out,
             error = "\\x used with no following hex digits";
             return false;
         }
-        out.value = static_cast<std::uint32_t>(
-            std::min<std::uint64_t>(result, 0xFFFFFFFFULL));
+        out.value = result;
         return true;
     }
     case 'u':
@@ -388,6 +391,7 @@ bool decodeEscape(std::string_view text, std::size_t& i, EscapeValue& out,
 bool parseCharacterLiteral(std::string_view text, PPValue& out,
                            std::string& error,
                            std::vector<std::string>& warnings,
+                           std::vector<std::string>& errors,
                            const CharacterOptions& characterOptions) {
     const std::size_t quote = text.find('\'');
     if (quote == std::string_view::npos || text.size() < quote + 2) {
@@ -460,45 +464,55 @@ bool parseCharacterLiteral(std::string_view text, PPValue& out,
             } else if (prefix == CharacterPrefix::Wide ||
                        prefix == CharacterPrefix::Utf16) {
                 // GCC 15.2 x86_64-w64-mingw32: wchar_t/char16_t are 16-bit.
-                // Non-BMP source characters cannot occupy one code unit; this
-                // implementation rejects them instead of truncating.
+                // A non-BMP source character is diagnosed, but GCC still
+                // evaluates it as the low 16 bits (0xDE00 for U+1F600).
                 if (cp > 0xFFFFu) {
-                    error = "character not encodable in a single code unit";
-                    return false;
+                    if (prefix == CharacterPrefix::Wide) {
+                        warnings.push_back(
+                            "character not encodable in a single code unit");
+                    } else {
+                        errors.push_back(
+                            "character not encodable in a single code unit");
+                    }
+                    const std::uint32_t offset = cp - 0x10000u;
+                    units.push_back(0xDC00u + (offset & 0x3FFu));
+                } else {
+                    units.push_back(cp);
                 }
-                units.push_back(cp);
             } else if (prefix == CharacterPrefix::Utf32) {
                 units.push_back(cp);
             } else { // u8
-                // GCC 15.2 in C++20 mode gives u8'x' type char (one UTF-8
-                // code unit). A multi-byte character is an error; GCC still
-                // evaluates its last byte, but the diagnostic is fatal here.
+                // C++20 u8 character literals have one UTF-8 code unit.
+                // GCC diagnoses multi-byte characters but still evaluates the
+                // last UTF-8 code unit ('中' -> 0xAD).
                 std::vector<std::uint32_t> encoded;
                 appendUtf8(encoded, cp);
                 if (encoded.size() != 1) {
-                    error = "character not encodable in a single code unit";
-                    return false;
+                    errors.push_back(
+                        "character not encodable in a single code unit");
+                    units.push_back(encoded.back());
+                } else {
+                    units.push_back(encoded.front());
                 }
-                units.push_back(encoded.front());
             }
         } else {
             // Numeric escapes are code-unit values, not Unicode scalars.
             // GCC truncates to the target code unit and warns.
-            std::uint32_t value = escaped.value;
-            std::uint32_t maximum = 0xFFu;
+            std::uint64_t value = escaped.value;
+            std::uint64_t maximum = 0xFFu;
             if (prefix == CharacterPrefix::Wide ||
                 prefix == CharacterPrefix::Utf16) {
                 maximum = 0xFFFFu;
             } else if (prefix == CharacterPrefix::Utf32) {
                 maximum = 0xFFFFFFFFu;
             }
-            if (value > maximum) {
+            if (value > maximum || escaped.overflow) {
                 warnings.push_back(escaped.hexadecimal
                                        ? "hex escape sequence out of range"
                                        : "octal escape sequence out of range");
                 value &= maximum;
             }
-            units.push_back(value);
+            units.push_back(static_cast<std::uint32_t>(value));
         }
     }
 
@@ -922,16 +936,22 @@ private:
             PPValue value;
             std::string error;
             std::vector<std::string> warnings;
+            std::vector<std::string> errors;
             if (!parseCharacterLiteral(token.text, value, error, warnings,
-                                       characterOptions_)) {
+                                       errors, characterOptions_)) {
                 diagnostics_.error(token.loc, error);
                 ok_ = false;
                 return makeSigned(0);
             }
             // Character literals are validated even in short-circuited
-            // branches, matching GCC's diagnostic behavior.
+            // branches, matching GCC's diagnostic behavior. Some GCC errors
+            // (u8 multi-byte, char16_t non-BMP) still produce a value and do
+            // not force the condition to false.
             for (const auto& warning : warnings) {
                 diagnostics_.warning(token.loc, warning);
+            }
+            for (const auto& diagnostic : errors) {
+                diagnostics_.error(token.loc, diagnostic);
             }
             if (!eval) {
                 return makeSigned(0);

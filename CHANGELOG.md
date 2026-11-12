@@ -1,5 +1,16 @@
 # Changelog
 
+## V2.5.1 — 2026-11-12
+
+### 修复
+
+- `#if` 中 `u8'多字节'`：产生 GCC 相同的 error，同时取最后一个 UTF-8 code unit 参与求值。
+- `L'非 BMP'`：产生 GCC 相同的 warning，并取 UTF-16 低 surrogate。
+- `u'非 BMP'`：产生 GCC 相同的 error，并取 UTF-16 低 surrogate。
+- 超过 32 位的 `\x`：保留低 32 位，按目标字符宽度截断并产生 warning，不再提前钳制成 `0xFFFFFFFF`。
+- 新增 `char_edge_values` 集成测试；删除三个基于旧错误假设的负面测试。
+- CTest 为 55 个。
+
 ## V2.5.0 — 2026-11-12
 
 ### 新增
@@ -11,7 +22,7 @@
   - 53 个 `__has_feature` / `__has_extension` C++20 特性。
 - 支持 `gnu::` 作用域 C++ 属性，例如 `__has_cpp_attribute(gnu::always_inline)`。
 - `__has_feature` / `__has_extension` 不再是常量 0。
-- 新增 `tests/test_gcc_has.cpp`，CTest 增加到 57 个。
+- 新增 `tests/test_gcc_has.cpp`，CTest 增加到 55 个。
 - 新增 `tools/generate_gcc_has_data.py`，可从 GCC 15.2 源码和编译器重新生成数据。
 
 ## V2.4.1 — 2026-11-12
