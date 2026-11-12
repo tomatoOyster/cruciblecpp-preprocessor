@@ -595,7 +595,7 @@ Preprocessor::Preprocessor(PreprocessorOptions options)
         PchCacheContext context;
         context.compiler = pathFromUtf8(compilerPath_);
         context.compilerVersion = compilerVersion_;
-        context.toolVersion = "2.5.2";
+        context.toolVersion = "2.5.3";
         context.standard = options_.standard;
         context.inputCharset = options_.inputCharset;
         context.executionCharset = options_.executionCharset;
@@ -871,7 +871,8 @@ bool Preprocessor::processFile(const std::filesystem::path& path,
     }
 
     FileReader reader;
-    auto file = reader.read(path, diagnostics_, options_.inputCharset);
+    auto file = reader.read(path, diagnostics_, options_.inputCharset,
+                            options_.trigraphs);
     if (!file) {
         return false;
     }

@@ -60,6 +60,36 @@ std::size_t rawStringPrefixLength(std::string_view text, std::size_t pos) {
     return prefixLength + delimiterLength + 1;
 }
 
+std::string translateTrigraphs(std::string_view input) {
+    std::string out;
+    out.reserve(input.size());
+    for (std::size_t i = 0; i < input.size();) {
+        if (i + 2 < input.size() && input[i] == '?' && input[i + 1] == '?') {
+            char replacement = 0;
+            switch (input[i + 2]) {
+            case '=': replacement = '#'; break;
+            case '/': replacement = '\\'; break;
+            case '\'': replacement = '^'; break;
+            case '(': replacement = '['; break;
+            case ')': replacement = ']'; break;
+            case '!': replacement = '|'; break;
+            case '<': replacement = '{'; break;
+            case '>': replacement = '}'; break;
+            case '-': replacement = '~'; break;
+            default: break;
+            }
+            if (replacement != 0) {
+                out.push_back(replacement);
+                i += 3;
+                continue;
+            }
+        }
+        out.push_back(input[i]);
+        ++i;
+    }
+    return out;
+}
+
 std::string normalizeNewlines(std::string input) {
     std::string out;
     out.reserve(input.size());
@@ -80,7 +110,8 @@ std::string normalizeNewlines(std::string input) {
 
 std::shared_ptr<SourceFile> FileReader::read(const std::filesystem::path& path,
                                              DiagnosticSink& diagnostics,
-                                             std::string_view inputCharset) {
+                                             std::string_view inputCharset,
+                                             bool trigraphs) {
     std::ifstream in(path, std::ios::binary);
     if (!in) {
         diagnostics.error({}, "cannot open source file '" + pathToUtf8(path) +
@@ -109,6 +140,10 @@ std::shared_ptr<SourceFile> FileReader::read(const std::filesystem::path& path,
         return nullptr;
     }
     input = std::move(decoded);
+
+    if (trigraphs) {
+        input = translateTrigraphs(input);
+    }
 
     input = normalizeNewlines(std::move(input));
 

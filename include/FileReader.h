@@ -18,7 +18,8 @@ public:
     // unrecoverable I/O or charset failure.
     std::shared_ptr<SourceFile> read(const std::filesystem::path& path,
                                      DiagnosticSink& diagnostics,
-                                     std::string_view inputCharset = "UTF-8");
+                                     std::string_view inputCharset = "UTF-8",
+                                     bool trigraphs = false);
 };
 
 } // namespace crucible

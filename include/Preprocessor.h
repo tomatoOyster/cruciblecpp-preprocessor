@@ -90,6 +90,7 @@ struct PreprocessorOptions {
 
     bool lineMarkers = true;
     bool keepComments = false;
+    bool trigraphs = false;
     bool warningsAsErrors = false;
     bool strict = false;
     bool dropUnknownPragmas = false;

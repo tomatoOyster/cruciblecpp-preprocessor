@@ -1,8 +1,8 @@
 # CrucibleCpp Preprocessor
 
-> **V2.5.2** — Windows x64 独立 C++ 预处理器，自动发现 PATH 中的 GCC 头文件目录，直接替代 `g++ -E` 的预处理步骤。
+> **V2.5.3（本地开发版，未发布）** — Windows x64 独立 C++ 预处理器，自动发现 PATH 中的 GCC 头文件目录，直接替代 `g++ -E` 的预处理步骤。
 >
-> [下载 V2.5.2](https://github.com/tomatoOyster/cruciblecpp-preprocessor/releases/latest) · [Changelog](CHANGELOG.md)
+> [Changelog](CHANGELOG.md)
 
 一个用 C++20 实现的独立 C++ 预处理器，兼容矩阵锁定为：
 
@@ -140,6 +140,7 @@ CLI：
   - 硬编码 GCC 15.2 预定义宏（`__GNUC__`、`_WIN32`、`__x86_64__`、`__SIZEOF_*`、`__cpp_*` 等）；
   - 整数常量、优先级、短路求值、除零诊断；
   - `#if` 字符常量：普通、`L`、`u`、`U`、`u8`，多字符常量、UTF-8 源码字符、`\x`/`\ooo`/UCN；行为对齐 GCC 15.2 / Windows x64。
+  - `-trigraphs`：可选的 GCC 9 个 trigraph 序列翻译。
 - 文件包含：
   - `#include "..."`：当前文件目录 → `-I` / `-isystem`；
   - `#include <...>`：`-I` / `-isystem`，不搜索当前文件目录；
@@ -348,6 +349,7 @@ g++ -std=c++20 -fsyntax-only output\hello.i
 --pch-cache-stats <file>     输出缓存命中率 JSON
 --pch-cache-max-entries <n>  最大缓存条目数（默认 256）
 --pch-cache-max-size <bytes> 最大缓存字节数（默认 512 MiB）
+-trigraphs                  启用 trigraph 翻译（默认按 C++20 不翻译）
 --pch-cache-max-age <days>   最大缓存天数（默认 30）
 --pch-cache-lock-timeout <ms> 并发锁等待超时（默认 10000）
 --pch-cache-gc               强制清理
@@ -524,7 +526,7 @@ CAT(, x)                  // x
 
 ## 测试
 
-当前包含 **56 个 CTest 用例**（正例会预处理后再用 GCC 编译，负例验证退出码）。
+当前包含 **58 个 CTest 用例**（正例会预处理后再用 GCC 编译，负例验证退出码）。
 
 > 测试规则：新增正例必须使用 `add_compile_case`，保证 `.i` 会被 GCC 实际接受；如果单独增加只做预处理的 `add_test`，必须再配一个 `compile_*` 测试。
 
@@ -554,7 +556,7 @@ CAT(, x)                  // x
 - `-nostdinc` 关闭自动发现；显式路径仍然有效。
 - 硬编码 GCC 15.2（C++20）宏 profile；换 GCC 版本或标准需要重新生成 profile。
 - `__has_builtin` / `__has_attribute` / `__has_cpp_attribute` / `__has_feature` / `__has_extension` 的完整 GCC 15.2 表由 GCC 15.2 源码和实际编译器查询生成，见 `include/GccHasData.inc`；换 GCC 版本需用 `tools/generate_gcc_has_data.py` 重新生成。
-- 不实现 trigraph（C++17 已移除）。
+- trigraph 默认保持 GCC 的 C++20 行为（不翻译）；传入 `-trigraphs` 时按 GCC 的 nine trigraph 序列翻译，并参与反斜杠换行拼接。
 - 不解析 GCC 二进制 PCH 格式；支持 `.gch` 的 ignore/warn/error/report 策略和外部 PCH artifact 缓存。`g++ -E` 本身不使用 PCH。
 - 未知 pragma 默认透传；未知指令默认 warning + 透传，`--strict` 时作为 error。
 - include guard 通过正常 `#ifndef` 语义处理，未做“检测 guard 后跳过整个文件”的性能优化。

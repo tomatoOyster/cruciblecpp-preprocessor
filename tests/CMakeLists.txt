@@ -33,6 +33,7 @@ add_compile_case(pound_ops test_pound_ops.cpp)
 add_compile_case(gcc_profile test_gcc_profile.cpp)
 add_compile_case(gcc_has test_gcc_has.cpp)
 add_compile_case(character_constants test_character_constants.cpp)
+add_compile_case(trigraph test_trigraph.cpp -trigraphs)
 add_compile_case(charset_latin1 test_charset_latin1.cpp
                  -finput-charset=ISO-8859-1)
 add_compile_case(charset_gbk test_charset_gbk.cpp -finput-charset=GBK)

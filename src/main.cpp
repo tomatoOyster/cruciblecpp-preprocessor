@@ -216,7 +216,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (arg == "--version") {
-            std::cout << "cruciblecpp-preprocessor 2.5.2\n";
+            std::cout << "cruciblecpp-preprocessor 2.5.3\n";
             return 0;
         }
         if (arg == "-o" || arg == "--output") {
@@ -282,6 +282,10 @@ int main(int argc, char** argv) {
         }
         if (arg == "-C" || arg == "--keep-comments") {
             options.keepComments = true;
+            continue;
+        }
+        if (arg == "-trigraphs" || arg == "--trigraphs") {
+            options.trigraphs = true;
             continue;
         }
         if (arg == "-MD" || arg == "-MMD") {
