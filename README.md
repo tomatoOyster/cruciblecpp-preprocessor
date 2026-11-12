@@ -1,8 +1,8 @@
 # CrucibleCpp Preprocessor
 
-> **V2.6.0（本地开发版，未发布）** — Windows x64 独立 C++ 预处理器，自动发现 PATH 中的 GCC 头文件目录，直接替代 `g++ -E` 的预处理步骤。
+> **V2.6.1** — Windows x64 独立 C++ 预处理器，自动发现 PATH 中的 GCC 头文件目录，直接替代 `g++ -E` 的预处理步骤。
 >
-> [Changelog](CHANGELOG.md)
+> [下载 V2.6.1](https://github.com/tomatoOyster/cruciblecpp-preprocessor/releases/tag/v2.6.1) · [Changelog](CHANGELOG.md)
 
 一个用 C++20 实现的独立 C++ 预处理器，兼容矩阵锁定为：
 
