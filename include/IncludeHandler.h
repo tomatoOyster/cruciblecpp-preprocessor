@@ -22,6 +22,7 @@ public:
     bool exists(std::string_view name, bool angled,
                 const std::filesystem::path& currentFile,
                 bool includeNext = false) const;
+    bool isSystemPath(const std::filesystem::path& path) const;
 
     // Locate an adjacent GCC precompiled header (<header>.gch) without
     // requiring the header source to exist. Used only for diagnostics/policy.

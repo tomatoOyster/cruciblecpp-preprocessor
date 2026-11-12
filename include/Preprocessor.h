@@ -10,6 +10,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -23,6 +24,11 @@ class OutputWriter;
 class SpecialOperator;
 
 enum class Severity { Note, Warning, Error, Fatal };
+
+struct IncludeFrame {
+    std::string path;
+    std::uint32_t line = 0;
+};
 
 struct Diagnostic {
     Severity severity = Severity::Error;
@@ -38,17 +44,25 @@ public:
     void setMaxErrors(int max) { maxErrors_ = max; }
     void setShowCaret(bool enabled) { showCaret_ = enabled; }
     void setColor(bool enabled) { color_ = enabled; }
-    void setIncludeStack(std::vector<std::string> stack) {
+    void setSystemHeader(bool enabled) { systemHeader_ = enabled; }
+    void setShowSystemWarnings(bool enabled) { showSystemWarnings_ = enabled; }
+    void setIncludeStack(std::vector<IncludeFrame> stack) {
         includeStack_ = std::move(stack);
     }
 
+    void pushDiagnosticState();
+    void popDiagnosticState();
+    void setDiagnosticState(std::string_view option, Severity severity);
+    bool warningEnabled(std::string_view option) const;
+
     void report(Severity severity, const SourceLocation& loc,
-                std::string message);
+                std::string message, std::string_view option = {});
     void error(const SourceLocation& loc, std::string message) {
         report(Severity::Error, loc, std::move(message));
     }
-    void warning(const SourceLocation& loc, std::string message) {
-        report(Severity::Warning, loc, std::move(message));
+    void warning(const SourceLocation& loc, std::string message,
+                 std::string_view option = {}) {
+        report(Severity::Warning, loc, std::move(message), option);
     }
     void note(const SourceLocation& loc, std::string message) {
         report(Severity::Note, loc, std::move(message));
@@ -65,9 +79,13 @@ private:
     bool warningsAsErrors_ = false;
     bool showCaret_ = true;
     bool color_ = false;
+    bool systemHeader_ = false;
+    bool showSystemWarnings_ = false;
     bool fatal_ = false;
     bool limitReached_ = false;
-    std::vector<std::string> includeStack_;
+    std::vector<IncludeFrame> includeStack_;
+    std::unordered_map<std::string, Severity> diagnosticState_;
+    std::vector<std::unordered_map<std::string, Severity>> diagnosticStack_;
 };
 
 struct CommandLineAction {
@@ -97,6 +115,8 @@ struct PreprocessorOptions {
     bool trigraphs = false;
     bool showDiagnosticCaret = true;
     bool colorDiagnostics = false;
+    bool showSystemHeaderWarnings = false;
+    std::unordered_map<std::string, Severity> diagnosticStates;
     bool warningsAsErrors = false;
     bool strict = false;
     bool dropUnknownPragmas = false;
@@ -143,7 +163,9 @@ private:
     bool loadGccProfile();
     bool defineFromCommandLine(const std::string& spec);
 
-    bool processFile(const std::filesystem::path& path, bool angledInclude);
+    bool processFile(const std::filesystem::path& path, bool angledInclude,
+                     std::uint32_t includedFromLine = 0,
+                     bool systemHeader = false);
     void processTokenStream(std::shared_ptr<SourceFile> file);
     bool processDirective(const std::vector<Token>& line,
                           std::size_t zeroBasedLine, bool& wroteOutput);
@@ -189,7 +211,8 @@ private:
     std::filesystem::path currentPath_;
     std::string currentPresumedFile_;
     std::string baseFile_;
-    std::vector<std::string> includeStack_;
+    std::vector<IncludeFrame> includeStack_;
+    bool currentSystemHeader_ = false;
     int lineDelta_ = 0;
     int includeLevel_ = 0;
     int counter_ = 0;

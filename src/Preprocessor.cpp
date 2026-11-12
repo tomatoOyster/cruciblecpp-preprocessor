@@ -467,15 +467,21 @@ void printSourceContext(const SourceLocation& loc, bool color) {
     }
 }
 
-void printIncludeTrace(const std::vector<std::string>& stack,
+void printIncludeTrace(const std::vector<IncludeFrame>& stack,
                        const SourceLocation& loc) {
     if (!loc.valid() || stack.size() < 2) {
         return;
     }
     for (std::size_t i = stack.size() - 1; i > 0; --i) {
+        const IncludeFrame& child = stack[i];
+        const IncludeFrame& parent = stack[i - 1];
         std::cerr << (i == stack.size() - 1 ? "In file included from "
                                             : "                 from ")
-                  << stack[i - 1] << (i == 1 ? ":" : ",") << '\n';
+                  << parent.path;
+        if (child.line != 0) {
+            std::cerr << ':' << child.line;
+        }
+        std::cerr << (i == 1 ? ":" : ",") << '\n';
     }
 }
 
@@ -483,9 +489,81 @@ void printIncludeTrace(const std::vector<std::string>& stack,
 
 DiagnosticSink::DiagnosticSink(int maxErrors) : maxErrors_(maxErrors) {}
 
+namespace {
+
+std::string normalizeDiagnosticOption(std::string_view option) {
+    std::string value(option);
+    while (!value.empty() &&
+           (value.front() == '"' || value.front() == '\'')) {
+        value.erase(value.begin());
+    }
+    while (!value.empty() &&
+           (value.back() == '"' || value.back() == '\'')) {
+        value.pop_back();
+    }
+    if (!value.empty() && value.front() != '-') {
+        value.insert(value.begin(), '-');
+    }
+    return value;
+}
+
+} // namespace
+
+void DiagnosticSink::pushDiagnosticState() {
+    diagnosticStack_.push_back(diagnosticState_);
+}
+
+void DiagnosticSink::popDiagnosticState() {
+    if (diagnosticStack_.empty()) {
+        warning({}, "pragma GCC diagnostic pop without matching push",
+                "-Wpragmas");
+        return;
+    }
+    diagnosticState_ = std::move(diagnosticStack_.back());
+    diagnosticStack_.pop_back();
+}
+
+void DiagnosticSink::setDiagnosticState(std::string_view option,
+                                        Severity severity) {
+    diagnosticState_[normalizeDiagnosticOption(option)] = severity;
+}
+
+bool DiagnosticSink::warningEnabled(std::string_view option) const {
+    if (systemHeader_ && !showSystemWarnings_) {
+        return false;
+    }
+    const std::string key = normalizeDiagnosticOption(option);
+    if (!key.empty()) {
+        const auto found = diagnosticState_.find(key);
+        if (found != diagnosticState_.end() &&
+            found->second == Severity::Note) {
+            return false;
+        }
+    }
+    return true;
+}
+
 void DiagnosticSink::report(Severity severity, const SourceLocation& loc,
-                            std::string message) {
-    if (severity == Severity::Warning && warningsAsErrors_) {
+                            std::string message, std::string_view option) {
+    bool explicitWarning = false;
+    if (severity == Severity::Warning) {
+        const std::string key = normalizeDiagnosticOption(option);
+        if (!key.empty()) {
+            const auto found = diagnosticState_.find(key);
+            if (found != diagnosticState_.end()) {
+                if (found->second == Severity::Note) {
+                    return;
+                }
+                severity = found->second;
+                explicitWarning = severity == Severity::Warning;
+            }
+        }
+        if (systemHeader_ && !showSystemWarnings_) {
+            return;
+        }
+    }
+    if (severity == Severity::Warning && warningsAsErrors_ &&
+        !explicitWarning) {
         severity = Severity::Error;
     }
 
@@ -544,6 +622,10 @@ Preprocessor::Preprocessor(PreprocessorOptions options)
     diagnostics_.setWarningsAsErrors(options_.warningsAsErrors);
     diagnostics_.setShowCaret(options_.showDiagnosticCaret);
     diagnostics_.setColor(options_.colorDiagnostics);
+    diagnostics_.setShowSystemWarnings(options_.showSystemHeaderWarnings);
+    for (const auto& [option, state] : options_.diagnosticStates) {
+        diagnostics_.setDiagnosticState(option, state);
+    }
 
     if (options_.autoGccIncludes) {
         const GccDiscovery discovery = discoverGccFromPath();
@@ -924,7 +1006,8 @@ int Preprocessor::run() {
     if (stdVersionFor(options_.standard) != 202002) {
         diagnostics_.warning(
             {}, "the hardcoded GCC 15.2 profile targets C++20; using " +
-                    options_.standard + " may produce different __cpp_* macros");
+                    options_.standard + " may produce different __cpp_* macros",
+            "-Wcpp");
     }
 
     applyCommandLine();
@@ -952,7 +1035,9 @@ int Preprocessor::run() {
 }
 
 bool Preprocessor::processFile(const std::filesystem::path& path,
-                               bool angledInclude) {
+                               bool angledInclude,
+                               std::uint32_t includedFromLine,
+                               bool systemHeader) {
     (void)angledInclude;
     if (diagnostics_.limitReached() || diagnostics_.fatal()) {
         return false;
@@ -986,8 +1071,11 @@ bool Preprocessor::processFile(const std::filesystem::path& path,
     currentPresumedFile_ = file->displayPath;
     lineDelta_ = 0;
     ++includeLevel_;
-    includeStack_.push_back(file->displayPath);
+    includeStack_.push_back({file->displayPath, includedFromLine});
     diagnostics_.setIncludeStack(includeStack_);
+    const bool previousSystemHeader = currentSystemHeader_;
+    currentSystemHeader_ = systemHeader;
+    diagnostics_.setSystemHeader(currentSystemHeader_);
 
     conditionals_ = std::make_unique<ConditionalEngine>(
         diagnostics_,
@@ -1019,6 +1107,8 @@ bool Preprocessor::processFile(const std::filesystem::path& path,
         includeStack_.pop_back();
     }
     diagnostics_.setIncludeStack(includeStack_);
+    currentSystemHeader_ = previousSystemHeader;
+    diagnostics_.setSystemHeader(currentSystemHeader_);
     return true;
 }
 
@@ -1247,7 +1337,40 @@ bool Preprocessor::handlePragmaText(std::string_view text,
     // The preprocessed output is a single file; emitting system_header there
     // would either be ignored or incorrectly mark the whole output as a system
     // header. Consume it and keep the pragma out of the .i.
+    if (trimmed.rfind("GCC diagnostic", 0) == 0) {
+        std::string rest = trim(trimmed.substr(14));
+        if (rest == "push") {
+            diagnostics_.pushDiagnosticState();
+        } else if (rest == "pop") {
+            diagnostics_.popDiagnosticState();
+        } else {
+            const std::size_t quote = rest.find('"');
+            const std::string action =
+                trim(rest.substr(0, quote == std::string::npos
+                                        ? rest.size()
+                                        : quote));
+            if (quote == std::string::npos ||
+                (action != "ignored" && action != "warning" &&
+                 action != "error")) {
+                diagnostics_.warning(loc, "unknown #pragma GCC diagnostic '" +
+                                               rest + "'",
+                                     "-Wpragmas");
+            } else if (auto option = extractQuotedArgument(rest)) {
+                Severity state = Severity::Warning;
+                if (action == "ignored") {
+                    state = Severity::Note;
+                } else if (action == "error") {
+                    state = Severity::Error;
+                }
+                diagnostics_.setDiagnosticState(*option, state);
+            }
+        }
+        return false;
+    }
+
     if (trimmed == "GCC system_header") {
+        currentSystemHeader_ = true;
+        diagnostics_.setSystemHeader(true);
         return false;
     }
 
@@ -1258,6 +1381,8 @@ bool Preprocessor::handlePragmaText(std::string_view text,
         diagnostics_.error(loc, "unknown #pragma: " + trimmed);
         return false;
     }
+    diagnostics_.warning(loc, "ignoring #pragma " + trimmed,
+                         "-Wunknown-pragmas");
     writer_->writePragma(trimmed);
     return true;
 }
@@ -1341,7 +1466,8 @@ bool Preprocessor::processDirective(const std::vector<Token>& inputLine,
             return true;
         }
         if (expanded.size() > 2) {
-            diagnostics_.warning(loc, "extra tokens after #line");
+            diagnostics_.warning(loc, "extra tokens after #line",
+                                 "-Wextra-tokens");
         }
         std::string newFile = currentPresumedFile_;
         if (expanded.size() >= 2) {
@@ -1366,7 +1492,7 @@ bool Preprocessor::processDirective(const std::vector<Token>& inputLine,
                            "#error " + joinTokens(line, 2));
     } else if (directive == "warning") {
         diagnostics_.warning(line.size() > 1 ? line[1].loc : loc,
-                             "#warning " + joinTokens(line, 2));
+                             "#warning " + joinTokens(line, 2), "-Wcpp");
     } else if (directive == "pragma") {
         const std::string text = joinTokens(line, 2);
         wroteOutput = handlePragmaText(text, loc);
@@ -1495,14 +1621,16 @@ bool Preprocessor::processConditional(const std::vector<Token>& line,
     }
     if (directive == "else") {
         if (line.size() > 2) {
-            diagnostics_.warning(loc, "extra tokens after #else");
+            diagnostics_.warning(loc, "extra tokens after #else",
+                                 "-Wextra-tokens");
         }
         conditionals_->onElse(loc);
         return true;
     }
     if (directive == "endif") {
         if (line.size() > 2) {
-            diagnostics_.warning(loc, "extra tokens after #endif");
+            diagnostics_.warning(loc, "extra tokens after #endif",
+                                 "-Wextra-tokens");
         }
         conditionals_->onEndif(loc);
         return true;
@@ -1560,7 +1688,8 @@ bool Preprocessor::checkPrecompiledHeader(
         if (pchWarned_.insert(key).second) {
             diagnostics_.warning(
                 loc, "ignoring precompiled header '" + pchText +
-                         "'; g++ -E reads the header source");
+                         "'; g++ -E reads the header source",
+                "-Winvalid-pch");
         }
     }
     return true;
@@ -1637,13 +1766,15 @@ bool Preprocessor::processInclude(const std::vector<Token>& line,
             return false;
         }
         if (expandedIndex != expanded.size()) {
-            diagnostics_.warning(loc, "extra tokens after #include");
+            diagnostics_.warning(loc, "extra tokens after #include",
+                             "-Wextra-tokens");
         }
         index = line.size();
     }
 
     if (index < line.size()) {
-        diagnostics_.warning(loc, "extra tokens after #include");
+        diagnostics_.warning(loc, "extra tokens after #include",
+                             "-Wextra-tokens");
     }
 
     auto resolved = includes_->resolve(name, angled, currentPath_,
@@ -1685,7 +1816,8 @@ bool Preprocessor::processInclude(const std::vector<Token>& line,
 
     const int returnLine =
         static_cast<int>(line.back().loc.line) + 1;
-    const bool ok = processFile(*resolved, angled);
+    const bool ok = processFile(*resolved, angled, loc.line,
+                                includes_->isSystemPath(*resolved));
     if (!options_.lineMarkers) {
         writer_->ensureNewline();
     } else if (ok) {

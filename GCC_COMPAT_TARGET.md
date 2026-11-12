@@ -182,11 +182,11 @@
 - 作用域属性（`gnu::always_inline`）已支持；
 - 表与 GCC 15.2 绑定，换版本需用 `tools/generate_gcc_has_data.py` 重新生成。
 
-### 4.4 pragma 长尾（P1）
+### 4.4 pragma 长尾
 
-- `#pragma GCC diagnostic` 透传，但没有内部诊断状态；
-- `#pragma GCC poison/dependency/target/optimize/visibility` 只是透传；
-- system header 只做了“消费”，没有完整警告抑制模型。
+- `#pragma GCC diagnostic push/pop/ignored/warning/error` 已有内部状态；
+- `#pragma GCC system_header` 和 `-isystem` 头默认抑制 warning，`-Wsystem-headers` 可恢复；
+- `#pragma GCC poison/dependency/target/optimize/visibility` 仍主要透传。
 
 ### 4.5 健壮性 / 安全（P1）
 

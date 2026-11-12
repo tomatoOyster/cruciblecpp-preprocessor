@@ -584,7 +584,7 @@ public:
             if (!tokens_.empty()) {
                 // unreachable; keeps the empty-expression path explicit
             }
-            diagnostics_.error({}, "empty #if expression");
+            diagnostics_.error({}, "#if with no expression");
             return false;
         }
         PPValue value = parseConditional(true);
@@ -948,7 +948,7 @@ private:
             // (u8 multi-byte, char16_t non-BMP) still produce a value and do
             // not force the condition to false.
             for (const auto& warning : warnings) {
-                diagnostics_.warning(token.loc, warning);
+                diagnostics_.warning(token.loc, warning, "-Woverflow");
             }
             for (const auto& diagnostic : errors) {
                 diagnostics_.error(token.loc, diagnostic);
@@ -1044,12 +1044,12 @@ void ConditionalEngine::onIfdef(std::string_view name, bool negate,
 void ConditionalEngine::onElif(const std::vector<Token>& expression,
                                const SourceLocation& loc) {
     if (stack_.empty()) {
-        diagnostics_.error(loc, "#elif without matching #if");
+        diagnostics_.error(loc, "'#elif' without '#if'");
         return;
     }
     Frame& frame = top();
     if (frame.seenElse) {
-        diagnostics_.error(loc, "#elif after #else");
+        diagnostics_.error(loc, "'#elif' after '#else'");
         return;
     }
     if (!frame.parentActive || frame.anyTaken) {
@@ -1064,12 +1064,12 @@ void ConditionalEngine::onElif(const std::vector<Token>& expression,
 void ConditionalEngine::onElifdef(std::string_view name, bool negate,
                                   const SourceLocation& loc) {
     if (stack_.empty()) {
-        diagnostics_.error(loc, "#elifdef without matching #if");
+        diagnostics_.error(loc, "'#elifdef' without '#if'");
         return;
     }
     Frame& frame = top();
     if (frame.seenElse) {
-        diagnostics_.error(loc, "#elifdef after #else");
+        diagnostics_.error(loc, "'#elifdef' after '#else'");
         return;
     }
     if (!frame.parentActive || frame.anyTaken) {
@@ -1089,12 +1089,12 @@ void ConditionalEngine::onElifdef(std::string_view name, bool negate,
 
 void ConditionalEngine::onElse(const SourceLocation& loc) {
     if (stack_.empty()) {
-        diagnostics_.error(loc, "#else without matching #if");
+        diagnostics_.error(loc, "'#else' without '#if'");
         return;
     }
     Frame& frame = top();
     if (frame.seenElse) {
-        diagnostics_.error(loc, "duplicate #else");
+        diagnostics_.error(loc, "'#else' after '#else'");
         return;
     }
     frame.thisActive = frame.parentActive && !frame.anyTaken;
@@ -1104,7 +1104,7 @@ void ConditionalEngine::onElse(const SourceLocation& loc) {
 
 void ConditionalEngine::onEndif(const SourceLocation& loc) {
     if (stack_.empty()) {
-        diagnostics_.error(loc, "#endif without matching #if");
+        diagnostics_.error(loc, "'#endif' without '#if'");
         return;
     }
     stack_.pop_back();
@@ -1120,7 +1120,7 @@ bool ConditionalEngine::evaluateExpression(
     const std::vector<Token>& tokens, const SourceLocation& loc,
     DiagnosticSink& diagnostics, const CharacterOptions& characterOptions) {
     if (tokens.empty()) {
-        diagnostics.error(loc, "empty #if expression");
+        diagnostics.error(loc, "#if with no expression");
         return false;
     }
     ExpressionParser parser(tokens, diagnostics, characterOptions);

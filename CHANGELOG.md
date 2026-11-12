@@ -12,7 +12,11 @@
 - 未闭合条件改为 `unterminated #if`。
 - 未知 preprocessing directive 改为 `invalid preprocessing directive #foo`。
 - 增加 `-fdiagnostics-color=auto|always|never`、`-fno-diagnostics-color`、`-fdiagnostics-show-caret`、`-fno-diagnostics-show-caret`。
-- 新增 `diagnostics` 集成测试，检查 caret、include trace、note、fatal 和关闭 caret。
+- 增加 `-W<name>` / `-Wno-<name>` / `-Werror=<name>` / `-Wno-error=<name>`。
+- 实现 `#pragma GCC diagnostic push/pop/ignored/warning/error` 状态。
+- 实现 `#pragma GCC system_header` 和 `-isystem` 头的默认 warning 抑制，支持 `-Wsystem-headers`。
+- include trace 增加 include 所在行号。
+- 新增 `diagnostics` 集成测试，检查 caret、include trace、note、fatal、pragma 状态、system header 和关闭 caret。
 - 新增宏重定义正例，预处理输出继续交给 GCC 编译。
 - CTest 为 60 个。
 

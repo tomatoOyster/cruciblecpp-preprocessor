@@ -20,7 +20,7 @@ if(result EQUAL 0)
 endif()
 
 foreach(pattern
-        "In file included from"
+        "In file included from .*main\\.cpp:1:"
         "warning: 'VALUE' redefined"
         "note: this is the location of the previous definition"
         "warning: #warning intentional warning"
@@ -73,4 +73,90 @@ if(NOT error MATCHES "error: #error intentional failure")
 endif()
 if(error MATCHES "\\^")
     message(FATAL_ERROR "caret was not disabled:\n${error}")
+endif()
+
+# pragma GCC diagnostic push/ignored/pop/error
+execute_process(
+    COMMAND "${PREPROCESSOR}" -P "${SOURCE_DIR}/diagnostics/pragma.cpp"
+            -o "${work}/pragma.i"
+    RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error)
+if(result EQUAL 0)
+    message(FATAL_ERROR "pragma diagnostic error was not honored:\n${error}")
+endif()
+if(error MATCHES "hidden")
+    message(FATAL_ERROR "ignored #warning was emitted:\n${error}")
+endif()
+if(NOT error MATCHES "warning: #warning visible")
+    message(FATAL_ERROR "visible #warning missing:\n${error}")
+endif()
+if(NOT error MATCHES "error: #warning now_error")
+    message(FATAL_ERROR "diagnostic error override missing:\n${error}")
+endif()
+
+# Headers included through -isystem hide warnings by default.
+execute_process(
+    COMMAND "${PREPROCESSOR}" -P -isystem "${SOURCE_DIR}/diagnostics/system"
+            "${SOURCE_DIR}/diagnostics/system_header.cpp"
+            -o "${work}/system.i"
+    RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error)
+if(NOT result EQUAL 0)
+    message(FATAL_ERROR "system header preprocessing failed:\n${error}")
+endif()
+if(error MATCHES "system header warning")
+    message(FATAL_ERROR "system-header warning was not suppressed:\n${error}")
+endif()
+
+execute_process(
+    COMMAND "${PREPROCESSOR}" -P -Wsystem-headers
+            -isystem "${SOURCE_DIR}/diagnostics/system"
+            "${SOURCE_DIR}/diagnostics/system_header.cpp"
+            -o "${work}/system_warnings.i"
+    RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error)
+if(NOT error MATCHES "warning: #warning system header warning")
+    message(FATAL_ERROR "-Wsystem-headers did not enable the warning:\n${error}")
+endif()
+
+# #pragma GCC system_header marks a quoted header too.
+execute_process(
+    COMMAND "${PREPROCESSOR}" -P -I "${SOURCE_DIR}/diagnostics"
+            "${SOURCE_DIR}/diagnostics/system_pragma.cpp"
+            -o "${work}/system_pragma.i"
+    RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error)
+if(NOT result EQUAL 0)
+    message(FATAL_ERROR "pragma system header failed:\n${error}")
+endif()
+if(error MATCHES "pragma system header warning")
+    message(FATAL_ERROR "pragma system_header did not suppress:\n${error}")
+endif()
+
+# Command-line warning control for #warning.
+file(WRITE "${work}/warn.cpp" "#warning command line controlled\n")
+execute_process(
+    COMMAND "${PREPROCESSOR}" -P -Wno-cpp "${work}/warn.cpp"
+            -o "${work}/warn.i"
+    RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error)
+if(NOT result EQUAL 0)
+    message(FATAL_ERROR "warning suppression changed exit status:\n${error}")
+endif()
+if(error MATCHES "command line controlled")
+    message(FATAL_ERROR "-Wno-cpp did not suppress #warning:\n${error}")
+endif()
+
+execute_process(
+    COMMAND "${PREPROCESSOR}" -P -Werror=cpp "${work}/warn.cpp"
+            -o "${work}/warn_error.i"
+    RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error)
+if(result EQUAL 0)
+    message(FATAL_ERROR "-Werror=cpp did not fail:\n${error}")
+endif()
+if(NOT error MATCHES "error: #warning command line controlled")
+    message(FATAL_ERROR "-Werror=cpp produced the wrong diagnostic:\n${error}")
+endif()
+
+execute_process(
+    COMMAND "${PREPROCESSOR}" -P -Werror -Wno-error=cpp "${work}/warn.cpp"
+            -o "${work}/warn_no_error.i"
+    RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error)
+if(NOT result EQUAL 0)
+    message(FATAL_ERROR "-Wno-error=cpp did not override -Werror:\n${error}")
 endif()

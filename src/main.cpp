@@ -149,6 +149,11 @@ void printUsage(std::ostream& out) {
            "  -MQ <target>                 Dependency target (Make-escaped)\n"
            "  -MP                          Accepted for CMake compatibility\n"
            "  -Werror                      Treat warnings as errors\n"
+           "  -W<name> / -Wno-<name>       Enable/disable a warning\n"
+           "  -Werror=<name>               Treat one warning as an error\n"
+           "  -Wno-error=<name>            Keep one warning non-fatal\n"
+           "  -Wsystem-headers             Show warnings from system headers\n"
+           "  -Wno-system-headers          Hide system-header warnings (default)\n"
            "  -fdiagnostics-color=<mode>   auto | always | never\n"
            "  -fno-diagnostics-color       Disable diagnostic colors\n"
            "  -fdiagnostics-show-caret     Show source line and caret (default)\n"
@@ -434,6 +439,39 @@ int main(int argc, char** argv) {
         }
         if (arg == "-Werror") {
             options.warningsAsErrors = true;
+            continue;
+        }
+        if (arg == "-Wsystem-headers") {
+            options.showSystemHeaderWarnings = true;
+            continue;
+        }
+        if (arg == "-Wno-system-headers") {
+            options.showSystemHeaderWarnings = false;
+            continue;
+        }
+        if (arg.rfind("-Werror=", 0) == 0) {
+            std::string option = arg.substr(8);
+            if (option.empty() || option.front() != '-') {
+                option = "-W" + option;
+            }
+            options.diagnosticStates[option] = crucible::Severity::Error;
+            continue;
+        }
+        if (arg.rfind("-Wno-error=", 0) == 0) {
+            std::string option = arg.substr(11);
+            if (option.empty() || option.front() != '-') {
+                option = "-W" + option;
+            }
+            options.diagnosticStates[option] = crucible::Severity::Warning;
+            continue;
+        }
+        if (arg.rfind("-Wno-", 0) == 0) {
+            options.diagnosticStates["-W" + arg.substr(5)] =
+                crucible::Severity::Note;
+            continue;
+        }
+        if (arg.rfind("-W", 0) == 0 && arg.size() > 2) {
+            options.diagnosticStates[arg] = crucible::Severity::Warning;
             continue;
         }
         if (arg == "-Wall" || arg == "-Wextra" || arg == "-E") {

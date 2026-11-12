@@ -118,6 +118,41 @@ bool IncludeHandler::exists(std::string_view name, bool angled,
     return resolve(name, angled, currentFile, includeNext).has_value();
 }
 
+bool IncludeHandler::isSystemPath(const std::filesystem::path& path) const {
+    std::error_code ec;
+    const std::filesystem::path candidate =
+        std::filesystem::absolute(path, ec).lexically_normal();
+    for (const auto& directory : systemDirs_) {
+        const std::filesystem::path base =
+            std::filesystem::absolute(directory, ec).lexically_normal();
+        auto it = base.begin();
+        auto jt = candidate.begin();
+        for (; it != base.end() && jt != candidate.end(); ++it, ++jt) {
+#ifdef _WIN32
+            std::string left = pathToUtf8(*it);
+            std::string right = pathToUtf8(*jt);
+            std::transform(left.begin(), left.end(), left.begin(),
+                           [](unsigned char c) {
+                               return static_cast<char>(std::tolower(c));
+                           });
+            std::transform(right.begin(), right.end(), right.begin(),
+                           [](unsigned char c) {
+                               return static_cast<char>(std::tolower(c));
+                           });
+            if (left != right) {
+#else
+            if (*it != *jt) {
+#endif
+                break;
+            }
+        }
+        if (it == base.end()) {
+            return true;
+        }
+    }
+    return false;
+}
+
 std::optional<std::filesystem::path> IncludeHandler::findPrecompiledHeader(
     std::string_view name, bool angled,
     const std::filesystem::path& currentFile, bool includeNext) const {

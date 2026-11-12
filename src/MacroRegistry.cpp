@@ -155,10 +155,16 @@ bool MacroRegistry::define(const MacroDefinition& definition,
         if (definitionsEquivalent(it->second, definition)) {
             return true;
         }
-        diagnostics.warning(definition.definitionLoc,
-                            "'" + definition.name + "' redefined");
-        diagnostics.note(it->second.definitionLoc,
-                         "this is the location of the previous definition");
+        const bool showWarning =
+            diagnostics.warningEnabled("-Wmacro-redefined");
+        if (showWarning) {
+            diagnostics.warning(definition.definitionLoc,
+                                "'" + definition.name + "' redefined",
+                                "-Wmacro-redefined");
+            diagnostics.note(
+                it->second.definitionLoc,
+                "this is the location of the previous definition");
+        }
         it->second = definition;
         return true;
     }
@@ -195,7 +201,7 @@ void MacroRegistry::popMacro(std::string_view name, DiagnosticSink& diagnostics)
     const auto it = pushed_.find(key);
     if (it == pushed_.end() || it->second.empty()) {
         diagnostics.warning({}, "pop_macro without matching push_macro for '" +
-                                    key + "'");
+                                    key + "'", "-Wpragmas");
         return;
     }
     std::optional<MacroDefinition> saved = std::move(it->second.back());

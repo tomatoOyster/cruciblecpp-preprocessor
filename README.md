@@ -363,6 +363,11 @@ g++ -std=c++20 -fsyntax-only output\hello.i
 -fno-diagnostics-color       关闭诊断颜色
 -fdiagnostics-show-caret     显示源码行和 caret（默认）
 -fno-diagnostics-show-caret  关闭源码行和 caret
+-W<name> / -Wno-<name>       启用/关闭单个 warning
+-Werror=<name>               单个 warning 视为 error
+-Wno-error=<name>            单个 warning 不升级为 error
+-Wsystem-headers             显示系统头 warning
+-Wno-system-headers          隐藏系统头 warning（默认）
 --strict                     未知 pragma 视为错误
 --drop-unknown-pragmas       丢弃未知 pragma
 --no-output-on-error         发生错误时不写输出文件
@@ -570,7 +575,7 @@ CAT(, x)                  // x
 - `#if` 字符常量的边界行为已按 GCC 15.2 / Windows x64 对齐：`u8` 多字节报 error 但仍取最后一个 UTF-8 code unit；`L` 非 BMP 报 warning 并取低 surrogate；`u` 非 BMP 报 error 并取低 surrogate；`\x` 超出目标宽度报 warning 并使用低位。
 - 引号和尖括号 include 都支持 Windows 反斜杠路径；`#include /*comment*/ <...>` 这类“注释夹在关键字和 header name 之间”的组合仍是边界。
 - depfile 记录实际处理的 quote/angle include，也记录 `__has_include` / `__has_include_next` 找到的探测头文件，与 GCC `-MD` 一致。
-- `#pragma GCC system_header` 会被消费，不写入 `.i`；系统头的完整警告抑制模型仍未实现。
+- `#pragma GCC system_header` 和来自 `-isystem` 的头会抑制普通警告；`-Wsystem-headers` 可重新显示。`#pragma GCC diagnostic push/pop/ignored/warning/error` 已维护独立诊断状态。
 
 ## 许可证
 

@@ -186,8 +186,8 @@ std::shared_ptr<SourceFile> FileReader::read(const std::filesystem::path& path,
     }
 
     if (!text.empty() && text.back() != '\n') {
-        diagnostics.warning({}, "'" + pathToUtf8(path) +
-                                    "' does not end in a newline; adding one");
+        diagnostics.warning({}, "no newline at end of file",
+                            "-Wnewline-eof");
         text.push_back('\n');
     }
 

@@ -678,7 +678,7 @@ std::vector<Token> MacroExpander::expand(const std::vector<Token>& input) {
         std::size_t closeIndex = 0;
         if (!collectArguments(in, look, *macro, arguments, closeIndex)) {
             diagnostics_.error(token.loc,
-                               "unterminated invocation of macro '" +
+                               "unterminated argument list invoking macro '" +
                                    macro->name + "'");
             out.push_back(std::move(token));
             continue;
