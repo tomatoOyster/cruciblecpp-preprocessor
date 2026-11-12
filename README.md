@@ -197,6 +197,9 @@ cruciblecpp-preprocessor/
 │   ├── Charset.cpp
 │   ├── FileReader.cpp
 │   ├── GccDiscovery.cpp
+│   ├── Sha256.cpp
+│   ├── PchCache.cpp
+│   ├── GccHasTables.cpp
 │   ├── Tokenizer.cpp
 │   ├── MacroRegistry.cpp
 │   ├── MacroExpander.cpp
@@ -259,6 +262,7 @@ ctest --test-dir build --output-on-failure
 
 ```powershell
 g++ -std=c++20 -Wall -Wextra -Iinclude `
+    src/Sha256.cpp src/PchCache.cpp src/GccHasTables.cpp `
     src/Charset.cpp src/Token.cpp src/FileReader.cpp src/GccDiscovery.cpp src/Tokenizer.cpp `
     src/MacroRegistry.cpp src/MacroExpander.cpp `
     src/ConditionalEngine.cpp src/IncludeHandler.cpp `
