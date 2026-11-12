@@ -18,10 +18,10 @@
 - 功能：预处理当前文件、只读 `.i` 预览、Problems 诊断、保存 `.i`、与 `g++ -E` diff、读取 `compile_commands.json`、查看 GCC include 路径。
 - 安装：从 Release 下载 `.vsix` 后执行
   ```powershell
-  code --install-extension path\to\cruciblecpp-vscode-0.4.1.vsix
+  code --install-extension path\to\cruciblecpp-vscode-0.5.0.vsix
   ```
 - 插件需要本仓库构建的 `cruciblecpp-preprocessor.exe`；如果不在工作区 `build`/`bin` 中，在 VS Code 设置里配置 `cruciblecpp.executable`。
-- 宏动画和 include 图需要 CrucibleCpp **2.2.0** 或更新版本。
+- 宏动画和 include 图需要 CrucibleCpp **2.2.0** 或更新版本；PCH 策略设置需要 **2.3.0** 或更新版本。
 
 ## 预编译头（PCH）
 
