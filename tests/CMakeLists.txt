@@ -6,6 +6,8 @@ else()
     set(TEST_COMPILE_FLAGS -std=c++20 -fsyntax-only)
 endif()
 
+# Every positive test must use this helper (or add a matching compile_* test)
+# so the preprocessed .i is accepted by GCC, not merely produced by CrucibleCpp.
 function(add_compile_case name input)
     set(output ${CMAKE_CURRENT_BINARY_DIR}/${name}.i)
     add_test(NAME preprocess_${name}
