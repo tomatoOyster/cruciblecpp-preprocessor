@@ -48,6 +48,12 @@ std::string pathToUtf8(const std::filesystem::path& path) {
                        value.size());
 }
 
+bool isRegularFile(const std::filesystem::path& path) {
+    std::error_code ec;
+    return std::filesystem::exists(path, ec) && !ec &&
+           std::filesystem::is_regular_file(path, ec) && !ec;
+}
+
 std::string joinTokenText(const std::vector<Token>& tokens) {
     std::string text;
     for (const auto& token : tokens) {
@@ -885,6 +891,23 @@ bool Preprocessor::applyCommandLine() {
     }
 
     for (const auto& forced : options_.forcedIncludes) {
+        if (!isRegularFile(forced)) {
+            std::filesystem::path pch = forced;
+            pch += ".gch";
+            if (isRegularFile(pch)) {
+                diagnostics_.error(
+                    {}, "cannot find forced include file '" +
+                            pathToUtf8(forced) +
+                            "'; found only precompiled header '" +
+                            pathToUtf8(pch) +
+                            "', and g++ -E cannot use it");
+                return false;
+            }
+        }
+        if (!checkPrecompiledHeader(forced, pathToUtf8(forced),
+                                    SourceLocation{})) {
+            return false;
+        }
         processFile(forced, false);
     }
     return !diagnostics_.hasError();
@@ -1495,6 +1518,56 @@ bool Preprocessor::processConditional(const std::vector<Token>& line,
     return false;
 }
 
+bool Preprocessor::checkPrecompiledHeader(
+    const std::filesystem::path& header, std::string_view includeName,
+    const SourceLocation& loc) {
+    std::filesystem::path pch = header;
+    pch += ".gch";
+    if (!isRegularFile(pch)) {
+        return true;
+    }
+
+    const std::string policy =
+        options_.pchPolicy == PchPolicy::Warn
+            ? "warn"
+            : options_.pchPolicy == PchPolicy::Error
+                  ? "error"
+                  : options_.pchPolicy == PchPolicy::Report ? "report"
+                                                            : "ignore";
+    const std::string pchText = pathToUtf8(pch);
+    if (options_.pchPolicy != PchPolicy::Ignore) {
+        PchRecord record;
+        record.includeName = std::string(includeName);
+        record.path = pchText;
+        record.policy = policy;
+        pchRecords_.push_back(std::move(record));
+    }
+
+    if (options_.pchPolicy == PchPolicy::Error) {
+        diagnostics_.error(
+            loc, "precompiled header '" + pchText +
+                     "' is present; refusing to use it (--pch=error); "
+                     "g++ -E reads the header source");
+        return false;
+    }
+
+    if (options_.pchPolicy == PchPolicy::Warn) {
+        std::string key = pchText;
+#ifdef _WIN32
+        std::transform(key.begin(), key.end(), key.begin(),
+                       [](unsigned char c) {
+                           return static_cast<char>(std::tolower(c));
+                       });
+#endif
+        if (pchWarned_.insert(key).second) {
+            diagnostics_.warning(
+                loc, "ignoring precompiled header '" + pchText +
+                         "'; g++ -E reads the header source");
+        }
+    }
+    return true;
+}
+
 bool Preprocessor::processInclude(const std::vector<Token>& line,
                                   bool nextInclude,
                                   const SourceLocation& loc) {
@@ -1578,7 +1651,21 @@ bool Preprocessor::processInclude(const std::vector<Token>& line,
     auto resolved = includes_->resolve(name, angled, currentPath_,
                                        nextInclude);
     if (!resolved.has_value()) {
-        diagnostics_.error(loc, "cannot find include file '" + name + "'");
+        if (auto pch = includes_->findPrecompiledHeader(
+                name, angled, currentPath_, nextInclude)) {
+            diagnostics_.error(
+                loc, "cannot find include file '" + name +
+                         "'; found only precompiled header '" +
+                         pathToUtf8(*pch) +
+                         "', and g++ -E cannot use it");
+        } else {
+            diagnostics_.error(loc,
+                               "cannot find include file '" + name + "'");
+        }
+        return false;
+    }
+
+    if (!checkPrecompiledHeader(*resolved, name, loc)) {
         return false;
     }
 
@@ -1945,6 +2032,16 @@ bool Preprocessor::writeAnalysis() {
             out << ',';
         }
         out << '"' << jsonEscape(files[i]) << '"';
+    }
+    out << "],\"pch\":[";
+    for (std::size_t i = 0; i < pchRecords_.size(); ++i) {
+        if (i) {
+            out << ',';
+        }
+        const auto& pch = pchRecords_[i];
+        out << "{\"include\":\"" << jsonEscape(pch.includeName)
+            << "\",\"path\":\"" << jsonEscape(pch.path)
+            << "\",\"policy\":\"" << jsonEscape(pch.policy) << "\"}";
     }
     out << "],\"includes\":[";
     for (std::size_t i = 0; i < includeEdges_.size(); ++i) {

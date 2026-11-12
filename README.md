@@ -1,8 +1,8 @@
 # CrucibleCpp Preprocessor
 
-> **V2.2.0** — Windows x64 独立 C++ 预处理器，自动发现 PATH 中的 GCC 头文件目录，直接替代 `g++ -E` 的预处理步骤。
+> **V2.3.0** — Windows x64 独立 C++ 预处理器，自动发现 PATH 中的 GCC 头文件目录，直接替代 `g++ -E` 的预处理步骤。
 >
-> [下载 V2.2.0](https://github.com/tomatoOyster/cruciblecpp-preprocessor/releases/latest) · [Changelog](CHANGELOG.md)
+> [下载 V2.3.0](https://github.com/tomatoOyster/cruciblecpp-preprocessor/releases/latest) · [Changelog](CHANGELOG.md)
 
 一个用 C++20 实现的独立 C++ 预处理器，兼容矩阵锁定为：
 
@@ -22,6 +22,27 @@
   ```
 - 插件需要本仓库构建的 `cruciblecpp-preprocessor.exe`；如果不在工作区 `build`/`bin` 中，在 VS Code 设置里配置 `cruciblecpp.executable`。
 - 宏动画和 include 图需要 CrucibleCpp **2.2.0** 或更新版本。
+
+## 预编译头（PCH）
+
+GCC 的 `g++ -E` **不会使用** `.gch`；PCH 只在真正编译时使用。因此本预处理器对 PCH 的语义是：
+
+- 默认忽略 `<header>.gch`，读取头文件源码并正常预处理。
+- 不解析 GCC 的二进制 PCH 格式；该格式与 GCC 版本、目标平台和选项绑定。
+- 如果只有 `.gch` 而没有头文件源码，会明确报错，行为与 `g++ -E` 一致。
+- `-include` 强制包含的 `cmake_pch.hxx` 也按源码处理，兼容 CMake 的 PCH 布局。
+- `.gch` 不会进入 depfile、include 图或宏 trace。
+
+PCH 诊断策略：
+
+```text
+--pch=ignore    默认，静默忽略
+--pch=warn      发现 .gch 时输出 warning
+--pch=error     发现 .gch 时直接报错
+--pch=report    在 --analysis-json 的 "pch" 数组中记录被忽略的 PCH
+```
+
+构建系统传入的 `-Winvalid-pch` / `-Wno-invalid-pch` 会作为兼容参数接受。
 
 **范围声明：**
 
@@ -265,6 +286,8 @@ g++ -std=c++20 -fsyntax-only output\hello.i
 -funsigned-char              普通 char 按无符号处理
 -fsigned-char                普通 char 按有符号处理（默认）
 --analysis-json <file>       输出 include 边和宏展开 trace 的 JSON
+--pch=ignore|warn|error|report
+                             PCH 策略（默认 ignore）
 -MD, -MMD                    生成 CMake/Ninja depfile
 -MF <file>                   依赖文件路径
 -MT <target>                 依赖目标
@@ -438,7 +461,7 @@ CAT(, x)                  // x
 
 ## 测试
 
-当前包含 **53 个 CTest 用例**（正例会预处理后再用 GCC 编译，负例验证退出码）。
+当前包含 **54 个 CTest 用例**（正例会预处理后再用 GCC 编译，负例验证退出码）。
 
 测试覆盖：
 

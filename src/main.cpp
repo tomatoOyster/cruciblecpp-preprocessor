@@ -129,6 +129,8 @@ void printUsage(std::ostream& out) {
            "  -funsigned-char              Treat plain char as unsigned\n"
            "  -fsigned-char                Treat plain char as signed (default)\n"
            "  --analysis-json <file>       Write include edges and macro trace JSON\n"
+           "  --pch=ignore|warn|error|report\n"
+           "                               Precompiled-header policy (default: ignore)\n"
            "  -MD, -MMD                    Generate a CMake/Ninja depfile\n"
            "  -MF <file>                   Dependency file path\n"
            "  -MT <target>                 Dependency target\n"
@@ -191,7 +193,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (arg == "--version") {
-            std::cout << "cruciblecpp-preprocessor 2.2.0\n";
+            std::cout << "cruciblecpp-preprocessor 2.3.0\n";
             return 0;
         }
         if (arg == "-o" || arg == "--output") {
@@ -265,6 +267,28 @@ int main(int argc, char** argv) {
         }
         if (arg == "--analysis-json") {
             options.analysisFile = pathFromUtf8(nextValue(arg.c_str()));
+            continue;
+        }
+        if (arg == "--pch" || arg.rfind("--pch=", 0) == 0) {
+            const std::string value = arg == "--pch"
+                                          ? nextValue(arg.c_str())
+                                          : arg.substr(6);
+            if (value == "ignore") {
+                options.pchPolicy = crucible::PchPolicy::Ignore;
+            } else if (value == "warn") {
+                options.pchPolicy = crucible::PchPolicy::Warn;
+            } else if (value == "error") {
+                options.pchPolicy = crucible::PchPolicy::Error;
+            } else if (value == "report") {
+                options.pchPolicy = crucible::PchPolicy::Report;
+            } else {
+                std::cerr << "error: --pch expects ignore, warn, error, or report\n";
+                return 2;
+            }
+            continue;
+        }
+        if (arg == "-Winvalid-pch" || arg == "-Wno-invalid-pch") {
+            // GCC warning controls; PCH is never parsed by this tool.
             continue;
         }
         if (arg == "-MF") {

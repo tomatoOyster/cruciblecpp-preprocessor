@@ -71,6 +71,8 @@ struct CommandLineAction {
     std::string text;
 };
 
+enum class PchPolicy { Ignore, Warn, Error, Report };
+
 struct PreprocessorOptions {
     std::filesystem::path input;
     std::filesystem::path output;
@@ -101,6 +103,9 @@ struct PreprocessorOptions {
     std::string inputCharset = "UTF-8";
     std::string executionCharset = "UTF-8";
     bool unsignedChar = false;
+
+    // GCC .gch files are never parsed. This controls diagnostics only.
+    PchPolicy pchPolicy = PchPolicy::Ignore;
 
     // Optional JSON analysis output for GUI/front-end tooling.
     std::filesystem::path analysisFile;
@@ -143,6 +148,9 @@ private:
     bool writeOutput();
     bool writeDependencies();
     bool writeAnalysis();
+    bool checkPrecompiledHeader(const std::filesystem::path& header,
+                                std::string_view includeName,
+                                const SourceLocation& loc);
     void recordDependency(const std::filesystem::path& path);
     std::shared_ptr<SourceFile> makeSyntheticFile(
         std::string_view text, std::string_view displayName);
@@ -196,9 +204,16 @@ private:
         std::vector<MacroTraceArgument> arguments;
         std::vector<MacroTraceStep> steps;
     };
+    struct PchRecord {
+        std::string includeName;
+        std::string path;
+        std::string policy;
+    };
     std::vector<IncludeEdge> includeEdges_;
     std::vector<MacroTrace> macroTrace_;
     std::unordered_map<int, std::size_t> macroTraceIndex_;
+    std::vector<PchRecord> pchRecords_;
+    std::unordered_set<std::string> pchWarned_;
 };
 
 } // namespace crucible

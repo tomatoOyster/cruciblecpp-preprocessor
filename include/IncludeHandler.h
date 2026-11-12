@@ -23,6 +23,13 @@ public:
                 const std::filesystem::path& currentFile,
                 bool includeNext = false) const;
 
+    // Locate an adjacent GCC precompiled header (<header>.gch) without
+    // requiring the header source to exist. Used only for diagnostics/policy.
+    std::optional<std::filesystem::path> findPrecompiledHeader(
+        std::string_view name, bool angled,
+        const std::filesystem::path& currentFile,
+        bool includeNext = false) const;
+
     std::string canonicalKey(const std::filesystem::path& path) const;
 
     bool markOnce(const std::filesystem::path& path);

@@ -118,6 +118,71 @@ bool IncludeHandler::exists(std::string_view name, bool angled,
     return resolve(name, angled, currentFile, includeNext).has_value();
 }
 
+std::optional<std::filesystem::path> IncludeHandler::findPrecompiledHeader(
+    std::string_view name, bool angled,
+    const std::filesystem::path& currentFile, bool includeNext) const {
+    const std::filesystem::path requested = pathFromUtf8(name);
+
+    auto checkPath = [](std::filesystem::path candidate)
+        -> std::optional<std::filesystem::path> {
+        candidate += ".gch";
+        if (isRegularFile(candidate)) {
+            return candidate;
+        }
+        return std::nullopt;
+    };
+
+    if (requested.is_absolute()) {
+        return checkPath(requested);
+    }
+
+    auto checkDir = [&](const std::filesystem::path& dir)
+        -> std::optional<std::filesystem::path> {
+        if (dir.empty()) {
+            return std::nullopt;
+        }
+        return checkPath(dir / requested);
+    };
+
+    if (!angled && !includeNext && !currentFile.empty()) {
+        const std::filesystem::path currentDir =
+            currentFile.parent_path().empty() ? std::filesystem::path(".")
+                                              : currentFile.parent_path();
+        if (auto found = checkDir(currentDir)) {
+            return found;
+        }
+    }
+
+    std::size_t startIndex = 0;
+    std::vector<std::filesystem::path> searchDirs;
+    searchDirs.reserve(userDirs_.size() + systemDirs_.size());
+    searchDirs.insert(searchDirs.end(), userDirs_.begin(), userDirs_.end());
+    searchDirs.insert(searchDirs.end(), systemDirs_.begin(), systemDirs_.end());
+
+    if (includeNext) {
+        const std::string currentKey =
+            currentFile.empty()
+                ? std::string()
+                : canonicalKey(currentFile.parent_path().empty()
+                                   ? std::filesystem::path(".")
+                                   : currentFile.parent_path());
+        for (std::size_t i = 0; i < searchDirs.size(); ++i) {
+            if (!currentKey.empty() &&
+                canonicalKey(searchDirs[i]) == currentKey) {
+                startIndex = i + 1;
+                break;
+            }
+        }
+    }
+
+    for (std::size_t i = startIndex; i < searchDirs.size(); ++i) {
+        if (auto found = checkDir(searchDirs[i])) {
+            return found;
+        }
+    }
+    return std::nullopt;
+}
+
 bool IncludeHandler::markOnce(const std::filesystem::path& path) {
     return onceFiles_.insert(canonicalKey(path)).second;
 }

@@ -48,6 +48,16 @@ set_tests_properties(newyear_ignores_arguments
 add_compile_case(standard_headers test_standard_headers.cpp ${GCC_IMPLICIT_INCLUDE_FLAGS})
 add_compile_case(standard_headers_auto test_standard_headers.cpp)
 add_compile_case(windows_header test_windows_header.cpp ${GCC_IMPLICIT_INCLUDE_FLAGS})
+
+# GCC .gch files are ignored like g++ -E; this test also covers CMake PCH
+# forced includes and the --pch diagnostics policy.
+add_test(NAME pch_policy
+    COMMAND ${CMAKE_COMMAND}
+            -DPREPROCESSOR=$<TARGET_FILE:cruciblecpp-preprocessor>
+            -DCXX=${CMAKE_CXX_COMPILER}
+            -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/pch
+            -DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/test_pch.cmake)
 add_compile_case(angle_header_name test_angle_header_name.cpp
                  -I ${CMAKE_CURRENT_SOURCE_DIR})
 

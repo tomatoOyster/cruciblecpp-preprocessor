@@ -1,5 +1,19 @@
 # Changelog
 
+## V2.3.0 — 2026-11-12
+
+### 新增
+
+- PCH 策略：`--pch=ignore|warn|error|report`，默认行为与 `g++ -E` 一致，忽略 `.gch` 并读取头文件源码。
+- `.gch` 检测、缺失头文件源码时的明确错误、`--analysis-json` 中的 `pch` 记录。
+- CMake PCH 风格 `-include cmake_pch.hxx` 兼容。
+- 接受 `-Winvalid-pch` / `-Wno-invalid-pch` 作为构建系统兼容参数。
+- CTest 增加到 54 个，新增 PCH 策略、depfile、CMake forced include 和缺失源码测试。
+
+### 说明
+
+- 不解析 GCC 二进制 PCH 格式；`g++ -E` 本身不使用 PCH。
+
 ## V2.2.0 — 2026-11-12
 
 ### 新增
