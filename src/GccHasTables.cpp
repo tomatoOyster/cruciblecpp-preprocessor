@@ -38,7 +38,24 @@ std::string normalizeAttribute(std::string_view name) {
 } // namespace
 
 bool gccBuiltinAvailable(std::string_view name) {
-    return contains(gcc_data::kBuiltins, name);
+    return gccBuiltinValue(name) != 0;
+}
+
+int gccBuiltinValue(std::string_view name) {
+    if (!contains(gcc_data::kBuiltins, name)) {
+        return 0;
+    }
+    const auto begin = std::begin(gcc_data::kBuiltinValues);
+    const auto end = std::end(gcc_data::kBuiltinValues);
+    const auto found = std::lower_bound(
+        begin, end, name,
+        [](const gcc_data::BuiltinValue& entry, std::string_view value) {
+            return entry.name < value;
+        });
+    if (found == end || found->name != name) {
+        return 1;
+    }
+    return found->value;
 }
 
 bool gccAttributeAvailable(std::string_view name) {
@@ -47,14 +64,15 @@ bool gccAttributeAvailable(std::string_view name) {
 }
 
 int gccCppAttributeValue(std::string_view name, std::string_view standard) {
+    const std::string normalized = normalizeAttribute(name);
     const unsigned mask = standardMask(standard);
     const auto begin = std::begin(gcc_data::kCppAttributes);
     const auto end = std::end(gcc_data::kCppAttributes);
     const auto found = std::lower_bound(
-        begin, end, name,
+        begin, end, normalized,
         [](const gcc_data::CppAttributeSupport& entry,
            std::string_view value) { return entry.name < value; });
-    if (found == end || found->name != name) {
+    if (found == end || found->name != normalized) {
         return 0;
     }
     if (mask == 1u) {

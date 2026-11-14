@@ -82,7 +82,17 @@ def collect_builtins(source: str) -> set[str]:
                 r'"(__builtin_[A-Za-z0-9_]+|__is_[A-Za-z0-9_]+)"', text
             ):
                 builtins.add(match.group(1))
+            # Some front-end builtins (for example
+            # __builtin_operator_new) are referenced as identifiers rather
+            # than as quoted builtins.def names.
+            for match in re.finditer(
+                r"\b(__builtin_[A-Za-z0-9_]+|__is_[A-Za-z0-9_]+)\b", text
+            ):
+                builtins.add(match.group(1))
     builtins.add("__is_same_as")
+    # Front-end-only allocation builtins used by libstdc++.
+    builtins.add("__builtin_operator_new")
+    builtins.add("__builtin_operator_delete")
     return {name for name in builtins if valid_identifier(name)}
 
 
@@ -134,6 +144,26 @@ def run_query(gcc: str, standard: str, lines: list[str]) -> str:
         sys.stderr.write(process.stderr[:4000])
         raise RuntimeError("GCC query failed for " + standard)
     return process.stdout
+
+
+def query_builtin_values(
+    gcc: str, names: set[str]
+) -> dict[str, int]:
+    ordered = sorted(names)
+    lines = [
+        f"BUILTIN_VALUE {index} __has_builtin({name})"
+        for index, name in enumerate(ordered)
+    ]
+    output = run_query(gcc, "c++20", lines)
+    values: dict[str, int] = {}
+    for line in output.splitlines():
+        match = re.match(r"BUILTIN_VALUE\s+(\d+)\s+(\d+)", line)
+        if not match:
+            continue
+        value = int(match.group(2))
+        if value:
+            values[ordered[int(match.group(1))]] = value
+    return values
 
 
 def query_members(
@@ -232,6 +262,7 @@ def main() -> int:
     cpp_candidates.update({"clang::flag_enum", "clang::musttail"})
 
     true_builtins = sorted(query_members(args.gcc, "builtin", builtins))
+    builtin_values = query_builtin_values(args.gcc, set(true_builtins))
     true_attributes = sorted(query_members(args.gcc, "attribute", attributes))
     true_features = {
         standard: query_members(args.gcc, "feature", features, standard)
@@ -258,6 +289,16 @@ def main() -> int:
         handle.write(f"// GCC version: {version}\n")
         handle.write("namespace crucible::gcc_data {\n\n")
         write_array(handle, "kBuiltins", true_builtins)
+        handle.write(
+            "struct BuiltinValue { std::string_view name; int value; };\n"
+        )
+        handle.write("inline constexpr BuiltinValue kBuiltinValues[] = {\n")
+        for name in sorted(builtin_values):
+            if builtin_values[name] != 1:
+                handle.write(
+                    f"    {{{cpp_string(name)}, {builtin_values[name]}}},\n"
+                )
+        handle.write("};\n\n")
         write_array(handle, "kAttributes", true_attributes)
         handle.write(
             "struct FeatureSupport { std::string_view name; unsigned features; "
@@ -297,6 +338,7 @@ def main() -> int:
 
     print(
         f"wrote {output}: builtins={len(true_builtins)} "
+        f"builtin_values={len(builtin_values)} "
         f"attributes={len(true_attributes)} features={len(all_features)} "
         f"cpp_attributes={len(all_cpp_attributes)}"
     )

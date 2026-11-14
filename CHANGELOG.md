@@ -1,5 +1,14 @@
 # Changelog
 
+## V2.6.2 — 2026-11-14
+
+### 测试基础设施
+
+- 新增 `tests/differential/run_differential.py`：同一输入同时跑 CrucibleCpp 和 `g++ -E`，比较退出码、诊断行号/severity、token 流，并把两边的 `.i` 交给 GCC `-fsyntax-only`。
+- 新增真实 corpus：标准库 `<vector>`、`<filesystem>`、`<windows.h>`、宏、include/`__has_include`、字符常量、trigraph 和错误路径。
+- 修复差分测试暴露的问题：`__cplusplus` 缺少 `L` 后缀；`__has_builtin(__builtin_operator_new/delete)` 返回值应为 `201802`；`__has_cpp_attribute(__no_unique_address__)` 需要处理双下划线包裹。
+- CTest 增加 `differential_corpus`，总数 63。
+
 ## V2.6.1 — 2026-11-12
 
 ### 诊断系统升级

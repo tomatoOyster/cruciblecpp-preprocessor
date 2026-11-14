@@ -154,6 +154,18 @@ add_negative_case(unterminated_string unterminated_string.cpp)
 add_negative_case(missing_angle_include missing_angle_include.cpp)
 add_negative_case(nostdinc_angle nostdinc_angle.cpp -nostdinc)
 
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(WIN32 AND Python3_Interpreter_FOUND)
+    add_test(NAME differential_corpus
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/differential/run_differential.py
+                --gcc ${CMAKE_CXX_COMPILER}
+                --preprocessor $<TARGET_FILE:cruciblecpp-preprocessor>
+                --corpus ${CMAKE_CURRENT_SOURCE_DIR}/differential/corpus
+                --report ${CMAKE_CURRENT_BINARY_DIR}/differential-report.json)
+    set_tests_properties(differential_corpus PROPERTIES TIMEOUT 300)
+endif()
+
 add_test(NAME diagnostics
     COMMAND ${CMAKE_COMMAND}
             -DPREPROCESSOR=$<TARGET_FILE:cruciblecpp-preprocessor>

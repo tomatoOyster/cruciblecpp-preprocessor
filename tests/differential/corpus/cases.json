@@ -1,0 +1,37 @@
+[
+  {
+    "name": "basic",
+    "file": "basic.cpp"
+  },
+  {
+    "name": "standard_vector",
+    "file": "standard_vector.cpp"
+  },
+  {
+    "name": "standard_filesystem",
+    "file": "standard_filesystem.cpp"
+  },
+  {
+    "name": "standard_windows",
+    "file": "standard_windows.cpp"
+  },
+  {
+    "name": "include_case",
+    "file": "include_case.cpp",
+    "args": ["-I", "."]
+  },
+  {
+    "name": "characters",
+    "file": "characters.cpp"
+  },
+  {
+    "name": "trigraph",
+    "file": "trigraph.cpp",
+    "args": ["-trigraphs"]
+  },
+  {
+    "name": "diagnostic_missing",
+    "file": "diagnostic_missing.cpp",
+    "expect_error": true
+  }
+]

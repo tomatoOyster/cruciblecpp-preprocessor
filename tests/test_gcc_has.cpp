@@ -10,6 +10,12 @@
 #if !__has_builtin(__builtin_acos)
 #error __builtin_acos missing
 #endif
+#if __has_builtin(__builtin_operator_new) != 201802
+#error __builtin_operator_new version
+#endif
+#if __has_builtin(__builtin_operator_delete) != 201802
+#error __builtin_operator_delete version
+#endif
 #if !__has_attribute(no_sanitize_thread)
 #error no_sanitize_thread missing
 #endif

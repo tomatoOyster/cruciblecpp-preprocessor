@@ -792,7 +792,7 @@ Preprocessor::Preprocessor(PreprocessorOptions options)
         PchCacheContext context;
         context.compiler = pathFromUtf8(compilerPath_);
         context.compilerVersion = compilerVersion_;
-        context.toolVersion = "2.6.1";
+        context.toolVersion = "2.6.2";
         context.standard = options_.standard;
         context.inputCharset = options_.inputCharset;
         context.executionCharset = options_.executionCharset;
@@ -1181,6 +1181,9 @@ void Preprocessor::processTokenStream(std::shared_ptr<SourceFile> file) {
     const bool compactGaps = true;
 
     for (std::size_t i = 0; i < lines.size();) {
+        if (diagnostics_.fatal() || diagnostics_.limitReached()) {
+            break;
+        }
         if (lines[i].empty()) {
             if (!compactGaps) {
                 writer_->writeNewline();
@@ -1205,6 +1208,9 @@ void Preprocessor::processTokenStream(std::shared_ptr<SourceFile> file) {
             processDirective(line, i, wrote);
             if (!wrote && !compactGaps) {
                 writer_->writeNewline();
+            }
+            if (diagnostics_.fatal() || diagnostics_.limitReached()) {
+                break;
             }
             ++i;
             continue;
@@ -1275,6 +1281,9 @@ void Preprocessor::processTokenStream(std::shared_ptr<SourceFile> file) {
         }
         handleTextTokens(expanded);
         writer_->ensureNewline();
+        if (diagnostics_.fatal() || diagnostics_.limitReached()) {
+            break;
+        }
         i = j;
     }
 }
@@ -2121,7 +2130,7 @@ bool Preprocessor::evaluateCondition(const std::vector<Token>& expression,
                     }
                     int value = 0;
                     if (token.text == "__has_builtin") {
-                        value = gccBuiltinAvailable(argument) ? 1 : 0;
+                        value = gccBuiltinValue(argument);
                     } else if (token.text == "__has_attribute") {
                         value = gccAttributeAvailable(argument) ? 1 : 0;
                     } else if (token.text == "__has_feature" ||
@@ -2230,7 +2239,7 @@ bool Preprocessor::evaluateCondition(const std::vector<Token>& expression,
                     }
                     int value = 0;
                     if (token.text == "__has_builtin") {
-                        value = gccBuiltinAvailable(argument) ? 1 : 0;
+                        value = gccBuiltinValue(argument);
                     } else if (token.text == "__has_attribute") {
                         value = gccAttributeAvailable(argument) ? 1 : 0;
                     } else if (token.text == "__has_feature" ||

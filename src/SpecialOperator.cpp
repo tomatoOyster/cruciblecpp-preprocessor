@@ -118,7 +118,9 @@ std::optional<std::vector<Token>> SpecialOperator::expandBuiltin(
         return number((*context.counter)++);
     }
     if (token.text == "__cplusplus") {
-        return number(context.stdVersion);
+        return std::vector<Token>{makeToken(
+            TokenKind::PPNumber,
+            std::to_string(context.stdVersion) + "L", token.loc)};
     }
     if (token.text == "__STDC_HOSTED__") {
         return number(1);

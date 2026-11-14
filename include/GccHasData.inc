@@ -38,6 +38,7 @@ inline constexpr std::string_view kBuiltins[] = {
     "__builtin__exit",
     "__builtin_abort",
     "__builtin_abs",
+    "__builtin_acc_on_device",
     "__builtin_acos",
     "__builtin_acosf",
     "__builtin_acosf128",
@@ -289,6 +290,10 @@ inline constexpr std::string_view kBuiltins[] = {
     "__builtin_copysignf64x",
     "__builtin_copysignl",
     "__builtin_copysignq",
+    "__builtin_coro_destroy",
+    "__builtin_coro_done",
+    "__builtin_coro_promise",
+    "__builtin_coro_resume",
     "__builtin_cos",
     "__builtin_cosf",
     "__builtin_cosf128",
@@ -1702,6 +1707,12 @@ inline constexpr std::string_view kBuiltins[] = {
     "__remove_reference",
     "__type_pack_element",
     "__underlying_type",
+};
+
+struct BuiltinValue { std::string_view name; int value; };
+inline constexpr BuiltinValue kBuiltinValues[] = {
+    {"__builtin_operator_delete", 201802},
+    {"__builtin_operator_new", 201802},
 };
 
 inline constexpr std::string_view kAttributes[] = {

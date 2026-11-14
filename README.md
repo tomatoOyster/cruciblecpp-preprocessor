@@ -1,8 +1,8 @@
 # CrucibleCpp Preprocessor
 
-> **V2.6.1** — Windows x64 独立 C++ 预处理器，自动发现 PATH 中的 GCC 头文件目录，直接替代 `g++ -E` 的预处理步骤。
+> **V2.6.2（本地开发版，未发布）** — Windows x64 独立 C++ 预处理器，自动发现 PATH 中的 GCC 头文件目录，直接替代 `g++ -E` 的预处理步骤。
 >
-> [下载 V2.6.1](https://github.com/tomatoOyster/cruciblecpp-preprocessor/releases/tag/v2.6.1) · [Changelog](CHANGELOG.md)
+> [Changelog](CHANGELOG.md)
 
 一个用 C++20 实现的独立 C++ 预处理器，兼容矩阵锁定为：
 
@@ -546,9 +546,20 @@ CAT(, x)                  // x
 
 ## 测试
 
-当前包含 **62 个 CTest 用例**（正例会预处理后再用 GCC 编译，负例验证退出码）。
+当前包含 **63 个 CTest 用例**（正例会预处理后再用 GCC 编译，负例验证退出码；`differential_corpus` 会与 `g++ -E` 做差分）。
 
 > 测试规则：新增正例必须使用 `add_compile_case`，保证 `.i` 会被 GCC 实际接受；如果单独增加只做预处理的 `add_test`，必须再配一个 `compile_*` 测试。
+
+差分测试：
+
+```powershell
+python tests/differential/run_differential.py `
+  --gcc g++ `
+  --preprocessor build\cruciblecpp-preprocessor.exe `
+  --corpus tests\differential\corpus
+```
+
+它会比较退出码、诊断 severity/行号、预处理 token 流，并检查两边输出能否被 GCC 编译。`CTest` 中的 `differential_corpus` 会自动运行。
 
 测试覆盖：
 
