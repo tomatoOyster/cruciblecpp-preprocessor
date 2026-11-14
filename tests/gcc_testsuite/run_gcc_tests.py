@@ -29,12 +29,6 @@ assert spec.loader is not None
 spec.loader.exec_module(differential)
 
 SKIP_NAMES = {
-    "embed-1.C", "embed-2.C", "embed-3.C", "embed-4.C", "embed-5.C",
-    "embed-6.C", "embed-7.C", "embed-8.C", "embed-9.C", "embed-10.C",
-    "embed-11.C", "embed-12.C", "embed-13.C", "embed-14.C", "embed-15.C",
-    "embed-16.C", "embed-17.C", "embed-18.C", "embed-19.C", "embed-20.C",
-    "embed-21.C", "embed-22.C", "embed-23.C", "embed-24.C", "embed-25.C",
-    "embed-26.C",
     "delimited-escape-seq-1.C", "delimited-escape-seq-2.C",
     "c++98.C", "c++98-pedantic.C", "pr23827_cxx98.C",
     "pr23827_cxx98_neg.C", "pr23827_cxx11.C",
@@ -50,6 +44,7 @@ IGNORED_OPTIONS = {"-ansi", "-c", "-save-temps", "-o"}
 SUPPORTED_PREFIXES = (
     "-std=", "-D", "-U", "-I", "-include", "-isystem", "-W",
     "-pedantic", "-trigraphs", "-finput-charset", "-fexec-charset",
+    "--embed-dir",
 )
 
 
@@ -57,7 +52,10 @@ def parse_options(text: str, testsuite: Path) -> list[str]:
     options: list[str] = []
     for match in re.finditer(r"dg-options\s+\"([^\"]*)\"", text):
         raw = match.group(1).replace("\\\\", "\\")
-        raw = raw.replace("${srcdir}", str(testsuite))
+        # ${srcdir} in GCC tests refers to gcc/testsuite, not the cpp
+        # subdirectory passed on the command line.
+        source_root = testsuite.parents[1] if len(testsuite.parents) > 1 else testsuite
+        raw = raw.replace("${srcdir}", str(source_root))
         options.extend(raw.split())
     return options
 

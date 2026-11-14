@@ -1,8 +1,8 @@
 # CrucibleCpp Preprocessor
 
-> **V2.6.2** — Windows x64 独立 C++ 预处理器，自动发现 PATH 中的 GCC 头文件目录，直接替代 `g++ -E` 的预处理步骤。
+> **V2.6.3（本地开发版，未发布）** — Windows x64 独立 C++ 预处理器，自动发现 PATH 中的 GCC 头文件目录，直接替代 `g++ -E` 的预处理步骤。
 >
-> [下载 V2.6.2](https://github.com/tomatoOyster/cruciblecpp-preprocessor/releases/tag/v2.6.2) · [Changelog](CHANGELOG.md)
+> [Changelog](CHANGELOG.md)
 
 一个用 C++20 实现的独立 C++ 预处理器，兼容矩阵锁定为：
 
@@ -568,7 +568,7 @@ cmake -S . -B build-cmake `
   -DGCC_TESTSUITE_DIR="C:/gcc-15.2.0/gcc/testsuite/g++.dg/cpp"
 ```
 
-配置后 CTest 会多一个 `gcc_testsuite_cpp`。当前结果是 **26 pass、0 fail、51 skip**；skip 主要是 `#embed`、C++98 模式、`-pedantic-errors` 和依赖其他 testsuite fixture 的用例。
+配置后 CTest 会多一个 `gcc_testsuite_cpp`。当前结果是 **46 pass、0 fail、31 skip**；skip 主要是 C++98 模式、`-pedantic-errors`、`#embed` 的 `-O2`/ABI 组合和依赖其他 testsuite fixture 的用例。
 
 测试覆盖：
 
@@ -590,7 +590,7 @@ cmake -S . -B build-cmake `
 ## 已知限制
 
 - 不实现 C++20 modules 的 `import`/`export` 语义；`import` 作为普通 token 输出。
-- 不实现 C23 `#embed`（C++ 标准没有该指令）。
+- `#embed` 已支持，但 `gnu::base64` 等编译器扩展表示方式没有作为输入语法实现；`#embed` 主要覆盖 GCC 的字节嵌入行为。
 - 需要系统 `PATH` 中能找到 `g++.exe` / `gcc.exe` / `c++.exe`；找不到时标准库头无法自动解析，可手动传 `-isystem`。
 - 自动发现只支持 Windows；其他平台会退化为显式 `-I` / `-isystem`。
 - `-nostdinc` 关闭自动发现；显式路径仍然有效。

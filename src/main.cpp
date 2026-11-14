@@ -120,6 +120,7 @@ void printUsage(std::ostream& out) {
            "  -o, --output <file...>       Output file(s), in input order (default: stdout)\n"
            "  -I, --include-dir <dir>      Add a user include directory (repeatable)\n"
            "  -isystem <dir>               Add a system include directory (repeatable)\n"
+           "  --embed-dir <dir>            Add a #embed search directory (repeatable)\n"
            "  -nostdinc                    Do not auto-discover GCC include directories\n"
            "  --no-gcc-includes            Same as -nostdinc\n"
            "  --print-gcc-includes         Print discovered GCC include paths and exit\n"
@@ -240,7 +241,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (arg == "--version") {
-            std::cout << "cruciblecpp-preprocessor 2.6.2\n";
+            std::cout << "cruciblecpp-preprocessor 2.6.3\n";
             return 0;
         }
         if (arg == "-o" || arg == "--output") {
@@ -265,6 +266,16 @@ int main(int argc, char** argv) {
         if (arg == "-isystem") {
             options.systemDirs.push_back(
                 pathFromUtf8(nextValue(arg.c_str())));
+            continue;
+        }
+        if (arg == "--embed-dir") {
+            options.embedDirs.push_back(
+                pathFromUtf8(nextValue(arg.c_str())));
+            continue;
+        }
+        if (arg.rfind("--embed-dir=", 0) == 0) {
+            options.embedDirs.push_back(
+                pathFromUtf8(arg.substr(12)));
             continue;
         }
         if (arg == "-nostdinc" || arg == "--no-gcc-includes") {
@@ -462,6 +473,9 @@ int main(int argc, char** argv) {
                   "-Wcpp", "-Winvalid-pch"}) {
                 options.diagnosticStates[option] = crucible::Severity::Warning;
             }
+            continue;
+        }
+        if (arg == "-W") {
             continue;
         }
         if (arg == "-Wextra" || arg == "-Wpedantic" || arg == "-pedantic") {

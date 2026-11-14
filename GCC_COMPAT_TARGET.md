@@ -25,7 +25,7 @@
 - MSVCRT 版 MinGW、32 位 GCC；
 - 其他 GCC 小版本；
 - GCC PCH 二进制格式的解析/直接消费；PCH 的 `ignore/warn/error/report` 策略和外部 `.gch` artifact 缓存已支持；
-- modules、`#embed`；
+- modules；
 - 任意 sysroot；自动发现只针对 `PATH` 里的 GCC。
 
 ---

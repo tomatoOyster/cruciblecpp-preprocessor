@@ -104,6 +104,7 @@ struct PreprocessorOptions {
 
     std::vector<std::filesystem::path> includeDirs;
     std::vector<std::filesystem::path> systemDirs;
+    std::vector<std::filesystem::path> embedDirs;
     std::vector<CommandLineAction> commandActions;
     std::vector<std::filesystem::path> forcedIncludes;
 
@@ -176,6 +177,8 @@ private:
                           std::size_t zeroBasedLine, bool& wroteOutput);
     bool processInclude(const std::vector<Token>& line, bool nextInclude,
                         const SourceLocation& loc);
+    bool processEmbed(const std::vector<Token>& line,
+                      const SourceLocation& loc);
     bool processDefine(const std::vector<Token>& line,
                        const SourceLocation& loc, bool fromProfile = false);
     bool processConditional(const std::vector<Token>& line,

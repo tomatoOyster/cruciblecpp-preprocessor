@@ -14,6 +14,7 @@ not part of C++ preprocessing semantics; token spelling is.
 from __future__ import annotations
 
 import argparse
+import base64
 import difflib
 import json
 import os
@@ -57,6 +58,27 @@ def strip_line_markers(text: str) -> str:
             continue
         result.append(line)
     return "\n".join(result) + "\n"
+
+
+def expand_gnu_base64_embeds(text: str) -> str:
+    # GCC -E may preserve large embeds as:
+    #   #embed "." __gnu__::__base64__("...")
+    # Canonicalize that representation back to bytes for token comparison.
+    pattern = re.compile(
+        r'#\s*embed\s+"[^"]*"\s+__gnu__::__base64__\s*\((.*?)\)',
+        re.DOTALL,
+    )
+
+    def replace(match: re.Match) -> str:
+        payload = "".join(re.findall(r'"([^"]*)"', match.group(1)))
+        payload = payload.replace("\\\n", "").replace("\n", "")
+        try:
+            data = base64.b64decode(payload)
+        except Exception:
+            return match.group(0)
+        return ", ".join(str(byte) for byte in data)
+
+    return pattern.sub(replace, text)
 
 
 def strip_compiler_diagnostic_pragmas(text: str) -> str:
@@ -243,8 +265,10 @@ def run_case(case: dict, corpus: Path, gcc: str, preprocessor: str,
 
         gcc_result = run(gcc_command, corpus, timeout)
         our_result = run(our_command, corpus, timeout)
-        gcc_text = strip_compiler_diagnostic_pragmas(
-            strip_line_markers(decode_text(gcc_result.stdout))
+        gcc_text = expand_gnu_base64_embeds(
+            strip_compiler_diagnostic_pragmas(
+                strip_line_markers(decode_text(gcc_result.stdout))
+            )
         )
         gcc_output.write_text(gcc_text, encoding="utf-8")
         our_text = strip_compiler_diagnostic_pragmas(

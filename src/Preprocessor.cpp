@@ -253,13 +253,159 @@ bool replaceDefined(
     return ok;
 }
 
+struct EmbedSpec {
+    std::string header;
+    bool angled = false;
+    std::size_t offset = 0;
+    std::size_t limit = std::numeric_limits<std::size_t>::max();
+    std::vector<Token> prefix;
+    std::vector<Token> suffix;
+    std::vector<Token> ifEmpty;
+};
+
+bool parseLimitNumber(std::string_view text, std::size_t& value) {
+    std::string number(text);
+    while (!number.empty() &&
+           (number.back() == 'u' || number.back() == 'U' ||
+            number.back() == 'l' || number.back() == 'L')) {
+        number.pop_back();
+    }
+    if (number.empty()) {
+        return false;
+    }
+    try {
+        std::size_t consumed = 0;
+        const unsigned long long parsed =
+            std::stoull(number, &consumed, 0);
+        if (consumed != number.size()) {
+            return false;
+        }
+        value = static_cast<std::size_t>(parsed);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+bool parseEmbedSpec(const std::vector<Token>& tokens, std::size_t index,
+                    EmbedSpec& spec) {
+    while (index < tokens.size() && tokens[index].isTrivia()) {
+        ++index;
+    }
+    if (!parseHeaderFromTokens(tokens, index, spec.header, spec.angled)) {
+        return false;
+    }
+    while (index < tokens.size()) {
+        while (index < tokens.size() && tokens[index].isTrivia()) {
+            ++index;
+        }
+        if (index >= tokens.size()) {
+            break;
+        }
+        if (tokens[index].kind != TokenKind::Identifier) {
+            return false;
+        }
+        std::string name = tokens[index].text;
+        ++index;
+        while (index < tokens.size() && tokens[index].isTrivia()) {
+            ++index;
+        }
+        if (index + 1 < tokens.size() && tokens[index].isPunct("::") &&
+            tokens[index + 1].kind == TokenKind::Identifier) {
+            name += "::";
+            name += tokens[index + 1].text;
+            index += 2;
+            while (index < tokens.size() && tokens[index].isTrivia()) {
+                ++index;
+            }
+        }
+        if (index >= tokens.size() || !tokens[index].isPunct("(")) {
+            return false;
+        }
+        ++index;
+        std::vector<Token> argument;
+        int depth = 0;
+        for (; index < tokens.size(); ++index) {
+            if (tokens[index].isPunct("(")) {
+                ++depth;
+            } else if (tokens[index].isPunct(")")) {
+                if (depth == 0) {
+                    ++index;
+                    break;
+                }
+                --depth;
+            }
+            argument.push_back(tokens[index]);
+        }
+        if (index >= tokens.size() && argument.empty()) {
+            return false;
+        }
+        if (name == "limit") {
+            if (argument.size() != 1 || argument[0].kind != TokenKind::PPNumber ||
+                !parseLimitNumber(argument[0].text, spec.limit)) {
+                return false;
+            }
+        } else if (name == "gnu::offset" || name == "offset") {
+            if (argument.size() != 1 || argument[0].kind != TokenKind::PPNumber ||
+                !parseLimitNumber(argument[0].text, spec.offset)) {
+                return false;
+            }
+        } else if (name == "prefix") {
+            spec.prefix = std::move(argument);
+        } else if (name == "suffix") {
+            spec.suffix = std::move(argument);
+        } else if (name == "if_empty") {
+            spec.ifEmpty = std::move(argument);
+        } else {
+            return false;
+        }
+    }
+    return true;
+}
+
+std::optional<std::filesystem::path> resolveEmbedFile(
+    std::string_view name, const std::filesystem::path& currentFile,
+    const std::vector<std::filesystem::path>& embedDirs,
+    const std::vector<std::filesystem::path>& includeDirs,
+    const std::vector<std::filesystem::path>& systemDirs) {
+    const std::filesystem::path requested = pathFromUtf8(name);
+    if (requested.is_absolute() && isRegularFile(requested)) {
+        return requested;
+    }
+    std::vector<std::filesystem::path> search;
+    if (!currentFile.empty()) {
+        search.push_back(currentFile.parent_path());
+    }
+    search.insert(search.end(), embedDirs.begin(), embedDirs.end());
+    search.insert(search.end(), includeDirs.begin(), includeDirs.end());
+    search.insert(search.end(), systemDirs.begin(), systemDirs.end());
+    for (const auto& directory : search) {
+        const std::filesystem::path candidate = directory / requested;
+        if (isRegularFile(candidate)) {
+            return candidate;
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<std::vector<unsigned char>> readEmbedFile(
+    const std::filesystem::path& path) {
+    std::ifstream input(path, std::ios::binary);
+    if (!input) {
+        return std::nullopt;
+    }
+    return std::vector<unsigned char>(
+        std::istreambuf_iterator<char>(input),
+        std::istreambuf_iterator<char>());
+}
+
 bool isGccDefinedOperator(std::string_view name) {
     // GCC 15.2 makes these operator names visible to #ifdef/#if defined()
     // even though they are not ordinary predefined macros.
     return name == "__has_include" || name == "__has_include_next" ||
-           name == "__has_attribute" || name == "__has_cpp_attribute" ||
-           name == "__has_feature" || name == "__has_extension" ||
-           name == "__has_builtin";
+           name == "__has_embed" || name == "__has_attribute" ||
+           name == "__has_cpp_attribute" || name == "__has_feature" ||
+           name == "__has_extension" || name == "__has_builtin";
 }
 
 bool parseCppAttributeName(const std::vector<Token>& tokens,
@@ -316,6 +462,9 @@ int stdVersionFor(std::string_view standard) {
     }
     if (value == "c++23" || value == "c++2b") {
         return 202302;
+    }
+    if (value == "c++26" || value == "c++2c") {
+        return 202400;
     }
     return 202002;
 }
@@ -792,7 +941,7 @@ Preprocessor::Preprocessor(PreprocessorOptions options)
         PchCacheContext context;
         context.compiler = pathFromUtf8(compilerPath_);
         context.compilerVersion = compilerVersion_;
-        context.toolVersion = "2.6.2";
+        context.toolVersion = "2.6.3";
         context.standard = options_.standard;
         context.inputCharset = options_.inputCharset;
         context.executionCharset = options_.executionCharset;
@@ -1021,7 +1170,7 @@ int Preprocessor::run() {
     baseFile_ = pathToUtf8(options_.input);
     currentPresumedFile_ = baseFile_;
 
-    if (stdVersionFor(options_.standard) != 202002) {
+    if (stdVersionFor(options_.standard) < 202002) {
         diagnostics_.warning(
             {}, "the hardcoded GCC 15.2 profile targets C++20; using " +
                     options_.standard + " may produce different __cpp_* macros",
@@ -1605,6 +1754,8 @@ bool Preprocessor::processDirective(const std::vector<Token>& inputLine,
         const bool next = directive == "include_next";
         const bool included = processInclude(line, next, loc);
         wroteOutput = included;
+    } else if (directive == "embed") {
+        wroteOutput = processEmbed(line, loc);
     } else if (directive == "line") {
         std::vector<Token> arguments(line.begin() + 2, line.end());
         const std::vector<Token> expanded = expandTokens(arguments);
@@ -1993,6 +2144,85 @@ bool Preprocessor::processInclude(const std::vector<Token>& line,
     return ok;
 }
 
+bool Preprocessor::processEmbed(const std::vector<Token>& line,
+                                const SourceLocation& loc) {
+    if (line.size() < 3) {
+        diagnostics_.error(loc, "#embed expects a file name");
+        return false;
+    }
+
+    std::vector<Token> operand(line.begin() + 2, line.end());
+    operand = expandTokens(operand);
+    std::size_t index = 0;
+    EmbedSpec spec;
+    if (!parseEmbedSpec(operand, index, spec)) {
+        diagnostics_.error(loc, "invalid #embed parameters");
+        return false;
+    }
+
+    const auto pedantic = options_.diagnosticStates.find("-Wpedantic");
+    if (stdVersionFor(options_.standard) < 202400 &&
+        pedantic != options_.diagnosticStates.end() &&
+        pedantic->second != Severity::Note) {
+        diagnostics_.warning(loc,
+                             "'#embed' before C++26 is a GCC extension",
+                             "-Wpedantic");
+    }
+
+    const auto path = resolveEmbedFile(spec.header, currentPath_,
+                                       options_.embedDirs,
+                                       options_.includeDirs,
+                                       options_.systemDirs);
+    if (!path.has_value()) {
+        diagnostics_.report(Severity::Fatal, loc,
+                            spec.header + ": No such file or directory");
+        return false;
+    }
+    const auto bytes = readEmbedFile(*path);
+    if (!bytes.has_value()) {
+        diagnostics_.report(Severity::Fatal, loc,
+                            spec.header + ": input/output error");
+        return false;
+    }
+
+    const std::size_t available =
+        spec.offset < bytes->size() ? bytes->size() - spec.offset : 0;
+    const std::size_t count = std::min(spec.limit, available);
+    auto writeTokens = [&](const std::vector<Token>& tokens) {
+        for (const auto& token : tokens) {
+            if (token.kind != TokenKind::Newline &&
+                token.kind != TokenKind::Comment &&
+                token.kind != TokenKind::Placemarker) {
+                writer_->writeToken(token);
+            }
+        }
+    };
+
+    if (count == 0) {
+        writeTokens(spec.ifEmpty);
+        return !spec.ifEmpty.empty();
+    }
+
+    writeTokens(spec.prefix);
+    for (std::size_t i = 0; i < count; ++i) {
+        if (i != 0) {
+            Token comma;
+            comma.kind = TokenKind::Punctuator;
+            comma.text = ",";
+            comma.loc = loc;
+            writer_->writeToken(comma);
+        }
+        Token byte;
+        byte.kind = TokenKind::PPNumber;
+        byte.text = std::to_string(
+            static_cast<unsigned>((*bytes)[spec.offset + i]));
+        byte.loc = loc;
+        writer_->writeToken(byte);
+    }
+    writeTokens(spec.suffix);
+    return true;
+}
+
 bool Preprocessor::evaluateCondition(const std::vector<Token>& expression,
                                      const SourceLocation& loc) {
     if (expression.empty()) {
@@ -2180,6 +2410,54 @@ bool Preprocessor::evaluateCondition(const std::vector<Token>& expression,
     postExpansion.reserve(expanded.size());
     for (std::size_t i = 0; i < expanded.size();) {
         const Token& token = expanded[i];
+        if (token.isIdentifier("__has_embed")) {
+            std::size_t open = i + 1;
+            if (open < expanded.size() && expanded[open].isPunct("(")) {
+                std::size_t close = open + 1;
+                int depth = 1;
+                for (; close < expanded.size(); ++close) {
+                    if (expanded[close].isPunct("(")) {
+                        ++depth;
+                    } else if (expanded[close].isPunct(")")) {
+                        --depth;
+                        if (depth == 0) {
+                            break;
+                        }
+                    }
+                }
+                if (close < expanded.size()) {
+                    std::vector<Token> operand(expanded.begin() + open + 1,
+                                               expanded.begin() + close);
+                    EmbedSpec spec;
+                    std::size_t index = 0;
+                    int value = 0;
+                    if (parseEmbedSpec(operand, index, spec)) {
+                        const auto path = resolveEmbedFile(
+                            spec.header, currentPath_, options_.embedDirs,
+                            options_.includeDirs, options_.systemDirs);
+                        if (path.has_value()) {
+                            const auto bytes = readEmbedFile(*path);
+                            if (bytes.has_value()) {
+                                const std::size_t available =
+                                    spec.offset < bytes->size()
+                                        ? bytes->size() - spec.offset
+                                        : 0;
+                                const std::size_t count =
+                                    std::min(spec.limit, available);
+                                value = count == 0 ? 2 : 1;
+                            }
+                        }
+                    }
+                    postExpansion.push_back(
+                        makeNumber(std::to_string(value), token.loc));
+                    i = close + 1;
+                    continue;
+                }
+            }
+            postExpansion.push_back(makeNumber("0", token.loc));
+            ++i;
+            continue;
+        }
         if (token.isIdentifier("__has_include") ||
             token.isIdentifier("__has_include_next")) {
             const bool next = token.text == "__has_include_next";
