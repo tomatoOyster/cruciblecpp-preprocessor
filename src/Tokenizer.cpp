@@ -328,8 +328,8 @@ std::vector<Token> Tokenizer::tokenize(
             bool nestedCommentWarned = false;
 
             while (k < j) {
-                if (!nestedCommentWarned && diagnostics && s[k] == '/' &&
-                    k + 1 < j && s[k + 1] == '*') {
+                if (!nestedCommentWarned && diagnostics && k >= start + 2 &&
+                    s[k] == '/' && k + 1 < j && s[k + 1] == '*') {
                     SourceLocation loc;
                     loc.file = file;
                     loc.line = currentLine;
@@ -506,9 +506,10 @@ std::vector<Token> Tokenizer::tokenize(
                 loc.line = startLine;
                 loc.column = startColumn;
                 loc.offset = start;
-                diagnostics->error(
-                    loc, literal.character ? "unterminated character literal"
-                                           : "unterminated string literal");
+                diagnostics->warning(
+                    loc, literal.character
+                             ? "missing terminating ' character"
+                             : "missing terminating \" character");
             }
             Token token = makeToken(
                 literal.character ? TokenKind::CharLiteral

@@ -150,11 +150,23 @@ add_negative_case(unclosed_if unclosed_if.cpp)
 add_negative_case(unterminated_macro unterminated_macro.cpp)
 add_negative_case(missing_include missing_include.cpp)
 add_negative_case(error_directive error_directive.cpp)
-add_negative_case(unterminated_string unterminated_string.cpp)
+add_negative_case(unterminated_string unterminated_string.cpp -Werror)
 add_negative_case(missing_angle_include missing_angle_include.cpp)
 add_negative_case(nostdinc_angle nostdinc_angle.cpp -nostdinc)
 
+set(GCC_TESTSUITE_DIR "" CACHE PATH
+    "Optional GCC 15.2 testsuite g++.dg/cpp directory")
 find_package(Python3 COMPONENTS Interpreter QUIET)
+if(WIN32 AND Python3_Interpreter_FOUND AND GCC_TESTSUITE_DIR)
+    add_test(NAME gcc_testsuite_cpp
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/gcc_testsuite/run_gcc_tests.py
+                --gcc ${CMAKE_CXX_COMPILER}
+                --preprocessor $<TARGET_FILE:cruciblecpp-preprocessor>
+                --testsuite ${GCC_TESTSUITE_DIR}
+                --report ${CMAKE_CURRENT_BINARY_DIR}/gcc-testsuite-report.json)
+    set_tests_properties(gcc_testsuite_cpp PROPERTIES TIMEOUT 600)
+endif()
 if(WIN32 AND Python3_Interpreter_FOUND)
     add_test(NAME differential_corpus
         COMMAND ${Python3_EXECUTABLE}

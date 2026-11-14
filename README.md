@@ -561,6 +561,15 @@ python tests/differential/run_differential.py `
 
 它会比较退出码、诊断 severity/行号、预处理 token 流，并检查两边输出能否被 GCC 编译。`CTest` 中的 `differential_corpus` 会自动运行。
 
+可选接入 GCC 15.2 的 `g++.dg/cpp` testsuite：
+
+```powershell
+cmake -S . -B build-cmake `
+  -DGCC_TESTSUITE_DIR="C:/gcc-15.2.0/gcc/testsuite/g++.dg/cpp"
+```
+
+配置后 CTest 会多一个 `gcc_testsuite_cpp`。当前结果是 **20 pass、0 fail、57 skip**；skip 主要是 `#embed`、C++98 模式、UCN identifier、`-pedantic-errors` 和依赖其他 testsuite fixture 的用例。
+
 测试覆盖：
 
 - 对象宏、`#undef`、重定义、预定义宏；

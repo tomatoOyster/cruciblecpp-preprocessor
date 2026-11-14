@@ -796,9 +796,10 @@ private:
             PPValue rhs = parseAdditive(eval);
             if (eval) {
                 if (rhs.bits >= 64) {
-                    diagnostics_.error(tokens_[index_ - 1].loc,
-                                       "shift count is too large");
-                    ok_ = false;
+                    diagnostics_.warning(
+                        tokens_[index_ - 1].loc,
+                        "integer overflow in preprocessor expression",
+                        "-Woverflow");
                     lhs = makeSigned(0);
                 } else if (op == "<<") {
                     lhs = {lhs.bits << rhs.bits, lhs.isUnsigned};

@@ -1331,6 +1331,9 @@ void Preprocessor::handleTextTokens(const std::vector<Token>& tokens) {
                 i = close + 1;
                 continue;
             }
+            diagnostics_.error(
+                tokens[i].loc,
+                "_Pragma takes a parenthesized string literal");
         }
         pending.push_back(tokens[i]);
         ++i;
@@ -1439,7 +1442,8 @@ bool Preprocessor::handlePragmaText(std::string_view text,
 
     if (trimmed.rfind("GCC target", 0) == 0 ||
         trimmed.rfind("GCC optimize", 0) == 0 ||
-        trimmed.rfind("GCC visibility", 0) == 0) {
+        trimmed.rfind("GCC visibility", 0) == 0 ||
+        trimmed.rfind("pack", 0) == 0) {
         writer_->writePragma(trimmed);
         return true;
     }
@@ -1644,6 +1648,16 @@ bool Preprocessor::processDirective(const std::vector<Token>& inputLine,
     } else if (directive == "warning") {
         diagnostics_.warning(line.size() > 1 ? line[1].loc : loc,
                              "#warning " + joinTokens(line, 2), "-Wcpp");
+        const auto pedantic =
+            options_.diagnosticStates.find("-Wpedantic");
+        if (stdVersionFor(options_.standard) < 202302 &&
+            pedantic != options_.diagnosticStates.end() &&
+            pedantic->second != Severity::Note) {
+            diagnostics_.warning(
+                line.size() > 1 ? line[1].loc : loc,
+                "'#warning' before C++23 is a GCC extension",
+                "-Wpedantic");
+        }
     } else if (directive == "pragma") {
         const std::string text = joinTokens(line, 2);
         wroteOutput = handlePragmaText(text, loc);

@@ -165,6 +165,15 @@ Token SpecialOperator::stringize(const std::vector<Token>& rawArgument,
     for (char c : spelling) {
         if (c == '\\' || c == '"') {
             literal.push_back('\\');
+        } else if (c == '\n') {
+            literal += "\\n";
+            continue;
+        } else if (c == '\r') {
+            literal += "\\r";
+            continue;
+        } else if (c == '\t') {
+            literal += "\\t";
+            continue;
         }
         literal.push_back(c);
     }
