@@ -9,3 +9,6 @@ output/*.tmp
 __pycache__/
 *.pyc
 
+tests/corpus-cache/
+tests/realworld/work/
+
