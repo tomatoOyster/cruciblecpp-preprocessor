@@ -70,7 +70,7 @@ def supported(options: list[str]) -> str | None:
             standard = option[5:].replace("gnu", "c++", 1)
             if standard.startswith("c++"):
                 standard = standard[3:]
-            if standard not in ("17", "20", "23", "2a", "2b"):
+            if standard not in ("11", "17", "20", "23", "2a", "2b"):
                 return "unsupported standard " + option
             continue
         if not option.startswith(SUPPORTED_PREFIXES):
@@ -90,7 +90,7 @@ def normalize_standard(options: list[str]) -> list[str]:
                 standard = "c++20"
             elif standard == "c++2b":
                 standard = "c++23"
-            elif standard in ("c++11", "c++14"):
+            elif standard == "c++14":
                 standard = "c++17"
             elif standard in ("c++98", "c++03"):
                 return []

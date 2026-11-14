@@ -3,7 +3,7 @@
 > 当前工程：[cruciblecpp-preprocessor/](cruciblecpp-preprocessor/)  
 > 当前版本：**V2.1.0**
 >
-> 兼容矩阵：**Windows x64 + MinGW-w64 UCRT64 + GCC 15.2.0 + C++20**
+> 兼容矩阵：**Windows x64 + MinGW-w64 UCRT64 + GCC 15.2.0 + C++11 / C++17 / C++20**
 
 ---
 

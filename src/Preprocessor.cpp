@@ -457,6 +457,9 @@ std::string lowercase(std::string value) {
 
 int stdVersionFor(std::string_view standard) {
     const std::string value = lowercase(std::string(standard));
+    if (value == "c++11" || value == "c++0x") {
+        return 201103;
+    }
     if (value == "c++17" || value == "c++1z") {
         return 201703;
     }
@@ -983,7 +986,14 @@ bool Preprocessor::loadGccProfile() {
         "__TIME__",       "__TIMESTAMP__",  "__COUNTER__",
         "__INCLUDE_LEVEL__", "__BASE_FILE__", "__cplusplus"};
 
-    std::istringstream stream(kGccProfileText);
+    const int version = stdVersionFor(options_.standard);
+    const char* profileText = kGccProfileCxx20Text;
+    if (version == 201103) {
+        profileText = kGccProfileCxx11Text;
+    } else if (version == 201703) {
+        profileText = kGccProfileCxx17Text;
+    }
+    std::istringstream stream(profileText);
     std::string line;
     bool ok = true;
     while (std::getline(stream, line)) {
@@ -1170,10 +1180,12 @@ int Preprocessor::run() {
     baseFile_ = pathToUtf8(options_.input);
     currentPresumedFile_ = baseFile_;
 
-    if (stdVersionFor(options_.standard) < 202002) {
+    const int profileVersion = stdVersionFor(options_.standard);
+    if (profileVersion != 201103 && profileVersion != 201703 &&
+        profileVersion != 202002) {
         diagnostics_.warning(
-            {}, "the hardcoded GCC 15.2 profile targets C++20; using " +
-                    options_.standard + " may produce different __cpp_* macros",
+            {}, "no hardcoded GCC 15.2 profile for " + options_.standard +
+                    "; using the C++20 profile",
             "-Wcpp");
     }
 

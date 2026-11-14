@@ -4,6 +4,21 @@
     "file": "basic.cpp"
   },
   {
+    "name": "profile_cxx11",
+    "file": "profile.cpp",
+    "std": "c++11"
+  },
+  {
+    "name": "profile_cxx17",
+    "file": "profile.cpp",
+    "std": "c++17"
+  },
+  {
+    "name": "profile_cxx20",
+    "file": "profile.cpp",
+    "std": "c++20"
+  },
+  {
     "name": "standard_vector",
     "file": "standard_vector.cpp"
   },

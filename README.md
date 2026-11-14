@@ -6,7 +6,7 @@
 
 一个用 C++20 实现的独立 C++ 预处理器，兼容矩阵锁定为：
 
-> **Windows x64 + MinGW-w64 UCRT64 + GCC 15.2.0 + C++20**
+> **Windows x64 + MinGW-w64 UCRT64 + GCC 15.2.0 + C++11 / C++17 / C++20**
 
 它读取一个源文件，完成翻译阶段 1–4（文件读取、续行、预处理 token 化、预处理指令与宏展开），输出可交给该 GCC 继续编译的 `.i` 文本。
 
@@ -103,7 +103,7 @@ CLI：
 - 尖括号头：`-I` → `-isystem` → PATH 中 GCC 的 include 目录；**不搜索当前文件目录**。
 - 启动时从 `PATH` 查找 `g++.exe` / `gcc.exe` / `c++.exe`，执行 `g++ -E -v` 获取其隐式 include 搜索列表；不需要手动传 `-isystem`。
 - `-nostdinc` 可关闭自动发现；显式 `-I` / `-isystem` 仍然有效。
-- 硬编码 GCC 15.2（C++20）预定义宏 profile；include 路径在运行时查询，宏 profile 不查询。
+- 硬编码 GCC 15.2 的 C++11 / C++17 / C++20 预定义宏 profile；include 路径在运行时查询，宏 profile 不查询。
 - CMake 仍可把 `CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES` 作为 `-isystem` 显式传入；现在这是可选的。
 - 只针对 Windows x64 + MinGW-w64 UCRT64 + GCC 15.2.0 + C++20；不支持其他 ABI/GCC 版本/Linux/MSVC/Clang。
 - 提供 CMake/Ninja 可用的 depfile（`-MD/-MF/-MT`）。
@@ -276,7 +276,7 @@ g++ -std=c++20 -Wall -Wextra -Iinclude `
 
 ### GCC 15.2 profile
 
-`src/GccProfileData.inc` 是从 MinGW GCC 15.2（C++20）生成的硬编码预定义宏 profile。换 GCC 版本或目标标准时需要重新生成：
+`src/GccProfileData.inc` 是从 MinGW GCC 15.2 生成的 C++11 / C++17 / C++20 预定义宏 profile。换 GCC 版本或目标标准时需要重新生成：
 
 ```powershell
 .\tools\generate_gcc_profile.ps1
@@ -289,7 +289,7 @@ g++ -std=c++20 -dM -E -x c++ - > gcc_profile.txt
 # 去掉 #define __cplusplus 行后，包装成 src/GccProfileData.inc 中的 raw string
 ```
 
-当前实现会过滤 `__cplusplus`，由 `-std` 控制；profile 与 **GCC 15.2.0 / x86_64 / UCRT64 / C++20** 绑定。`-D` 可以覆盖 profile 宏，源码级重定义仍报错。
+当前实现会过滤 `__cplusplus`，由 `-std` 选择 C++11 / C++17 / C++20 profile；profile 与 **GCC 15.2.0 / x86_64 / UCRT64** 绑定。`-D` 可以覆盖 profile 宏，源码级重定义仍报错。
 
 如果目标机器是 MSVCRT 版 MinGW、32 位 GCC、或其他 GCC 小版本，必须重新生成 profile；当前 profile 不保证与它们一致。
 
@@ -337,7 +337,7 @@ g++ -std=c++20 -fsyntax-only output\hello.i
 -include <file>              强制包含文件（可重复）
 -P, --no-line-markers        不输出行标记
 -C, --keep-comments          保留注释
--std=<c++17|c++20|c++23>     设置 __cplusplus（默认 c++20）
+-std=<c++11|c++17|c++20>     选择对应 profile（默认 c++20）
 -finput-charset=<name>       源文件字符集（默认 UTF-8）
 -fexec-charset=<name>        执行字符集，影响 #if 字符常量（默认 UTF-8）
 -funsigned-char              普通 char 按无符号处理
@@ -594,7 +594,7 @@ cmake -S . -B build-cmake `
 - 需要系统 `PATH` 中能找到 `g++.exe` / `gcc.exe` / `c++.exe`；找不到时标准库头无法自动解析，可手动传 `-isystem`。
 - 自动发现只支持 Windows；其他平台会退化为显式 `-I` / `-isystem`。
 - `-nostdinc` 关闭自动发现；显式路径仍然有效。
-- 硬编码 GCC 15.2（C++20）宏 profile；换 GCC 版本或标准需要重新生成 profile。
+- 硬编码 GCC 15.2 的 C++11 / C++17 / C++20 宏 profile；C++23/C++26 会回退到 C++20 profile 并警告。
 - `__has_builtin` / `__has_attribute` / `__has_cpp_attribute` / `__has_feature` / `__has_extension` 的完整 GCC 15.2 表由 GCC 15.2 源码和实际编译器查询生成，见 `include/GccHasData.inc`；换 GCC 版本需用 `tools/generate_gcc_has_data.py` 重新生成。
 - trigraph 默认保持 GCC 的 C++20 行为（不翻译）；传入 `-trigraphs` 时按 GCC 的 nine trigraph 序列翻译，并参与反斜杠换行拼接。
 - 不解析 GCC 二进制 PCH 格式；支持 `.gch` 的 ignore/warn/error/report 策略和外部 PCH artifact 缓存。`g++ -E` 本身不使用 PCH。

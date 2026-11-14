@@ -4,6 +4,7 @@
 
 ### 新增
 
+- 增加 GCC 15.2 的 C++11 / C++17 / C++20 独立 predefined-macro profile；`-std` 选择对应的 `__cpp_*` 和内置宏。
 - 实现 GCC 15.2 的 `#embed`：二进制嵌入、`limit`、`gnu::offset`、`prefix`、`suffix`、`if_empty`。
 - 实现 `__has_embed`，返回 0/1/2（缺失/非空/空资源）。
 - 增加 `--embed-dir`，支持引号、尖括号和 `--embed-dir` 搜索。
