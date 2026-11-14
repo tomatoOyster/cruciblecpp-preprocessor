@@ -33,6 +33,48 @@ bool isHexDigit(char c) {
            (c >= 'A' && c <= 'F');
 }
 
+int hexValue(char c) {
+    if (c >= '0' && c <= '9') {
+        return c - '0';
+    }
+    if (c >= 'a' && c <= 'f') {
+        return c - 'a' + 10;
+    }
+    return c - 'A' + 10;
+}
+
+bool parseUcnAt(std::string_view s, std::size_t i, std::size_t& length,
+                std::uint32_t& codepoint) {
+    if (i + 2 > s.size() || s[i] != '\\' ||
+        (s[i + 1] != 'u' && s[i + 1] != 'U')) {
+        return false;
+    }
+    const std::size_t digits = s[i + 1] == 'u' ? 4 : 8;
+    if (i + 2 + digits > s.size()) {
+        return false;
+    }
+    std::uint32_t value = 0;
+    for (std::size_t k = 0; k < digits; ++k) {
+        const char c = s[i + 2 + k];
+        if (!isHexDigit(c)) {
+            return false;
+        }
+        value = value * 16 + static_cast<std::uint32_t>(hexValue(c));
+    }
+    length = 2 + digits;
+    codepoint = value;
+    return true;
+}
+
+bool isBasicUcnAllowedInIdentifier(std::uint32_t cp) {
+    return cp == '$' || cp == '@' || cp == '`';
+}
+
+std::string spellingOfUcn(std::string_view s, std::size_t i,
+                          std::size_t length) {
+    return std::string(s.substr(i, length));
+}
+
 struct StringStart {
     bool matched = false;
     bool raw = false;
@@ -548,21 +590,36 @@ std::vector<Token> Tokenizer::tokenize(
                 }
                 if (s[i] == '\\' && i + 1 < n &&
                     (s[i + 1] == 'u' || s[i + 1] == 'U')) {
-                    const bool universal = s[i + 1] == 'u';
-                    const std::size_t digits = universal ? 4 : 8;
-                    if (i + 2 + digits <= n) {
-                        bool valid = true;
-                        for (std::size_t k = 0; k < digits; ++k) {
-                            if (!isHexDigit(s[i + 2 + k])) {
-                                valid = false;
-                                break;
+                    std::size_t ucnLength = 0;
+                    std::uint32_t codepoint = 0;
+                    if (parseUcnAt(s, i, ucnLength, codepoint)) {
+                        if (diagnostics) {
+                            SourceLocation loc;
+                            loc.file = file;
+                            loc.line = line;
+                            loc.column = column;
+                            loc.offset = i;
+                            const std::string spelling =
+                                spellingOfUcn(s, i, ucnLength);
+                            if (codepoint >= 0xD800u &&
+                                codepoint <= 0xDFFFu) {
+                                diagnostics->error(
+                                    loc, spelling +
+                                             " is not a valid universal "
+                                             "character");
+                            } else if (codepoint > 0x10FFFFu ||
+                                       (codepoint < 0xA0u &&
+                                        !isBasicUcnAllowedInIdentifier(
+                                            codepoint))) {
+                                diagnostics->error(
+                                    loc, "universal character " + spelling +
+                                             " is not valid in an "
+                                             "identifier");
                             }
                         }
-                        if (valid) {
-                            i += 2 + digits;
-                            column += static_cast<std::uint32_t>(2 + digits);
-                            continue;
-                        }
+                        i += ucnLength;
+                        column += static_cast<std::uint32_t>(ucnLength);
+                        continue;
                     }
                     if (diagnostics) {
                         SourceLocation loc;
@@ -644,7 +701,7 @@ std::vector<Token> Tokenizer::tokenize(
             continue;
         }
 
-        if (isSingleCharPunct(c)) {
+        if (isSingleCharPunct(c) || c == '\\') {
             const std::size_t start = i;
             const std::uint32_t startLine = line;
             const std::uint32_t startColumn = column;

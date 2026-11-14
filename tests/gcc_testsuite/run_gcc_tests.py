@@ -40,8 +40,6 @@ SKIP_NAMES = {
     "pr23827_cxx98_neg.C", "pr23827_cxx11.C",
     "pr80005.C", "pragma-float-const-decimal64-1.C",
     "elifdef-3.C", "elifdef-5.C", "elifdef-6.C",
-    "ucn-1.C", "ucn-2.C",
-    "ucnid-2.C", "ucnid-3.C", "ucnid-2-utf8.C", "ucnid-3-utf8.C",
 }
 SKIP_OPTIONS = (
     "-fdirectives-only", "-traditional-cpp", "-fpreprocessed",

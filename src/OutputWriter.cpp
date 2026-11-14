@@ -1,8 +1,69 @@
 #include "OutputWriter.h"
 
+#include <cstdint>
+#include <cstdio>
 #include <sstream>
 
 namespace crucible {
+namespace {
+
+bool parseUcnAt(std::string_view text, std::size_t i, std::size_t& length,
+                std::uint32_t& codepoint) {
+    if (i + 2 > text.size() || text[i] != '\\' ||
+        (text[i + 1] != 'u' && text[i + 1] != 'U')) {
+        return false;
+    }
+    const std::size_t digits = text[i + 1] == 'u' ? 4 : 8;
+    if (i + 2 + digits > text.size()) {
+        return false;
+    }
+    std::uint32_t value = 0;
+    for (std::size_t k = 0; k < digits; ++k) {
+        const char c = text[i + 2 + k];
+        int digit = -1;
+        if (c >= '0' && c <= '9') {
+            digit = c - '0';
+        } else if (c >= 'a' && c <= 'f') {
+            digit = c - 'a' + 10;
+        } else if (c >= 'A' && c <= 'F') {
+            digit = c - 'A' + 10;
+        }
+        if (digit < 0) {
+            return false;
+        }
+        value = value * 16 + static_cast<std::uint32_t>(digit);
+    }
+    length = 2 + digits;
+    codepoint = value;
+    return true;
+}
+
+std::string canonicalIdentifier(std::string_view text) {
+    std::string out;
+    out.reserve(text.size());
+    for (std::size_t i = 0; i < text.size();) {
+        std::size_t length = 0;
+        std::uint32_t codepoint = 0;
+        if (parseUcnAt(text, i, length, codepoint)) {
+            if (codepoint >= 0x20u && codepoint <= 0x7Eu &&
+                codepoint != '\\') {
+                out.push_back(static_cast<char>(codepoint));
+            } else {
+                char buffer[16];
+                std::snprintf(buffer, sizeof(buffer), "\\U%08x",
+                              static_cast<unsigned>(codepoint));
+                out.append(buffer);
+            }
+            i += length;
+            continue;
+        }
+        out.push_back(text[i]);
+        ++i;
+    }
+    return out;
+}
+
+} // namespace
 
 OutputWriter::OutputWriter(bool lineMarkers) : lineMarkers_(lineMarkers) {}
 
@@ -33,7 +94,11 @@ void OutputWriter::writeToken(const Token& token) {
         // accidental token pasting in the emitted preprocessed source.
         buffer_.push_back(' ');
     }
-    buffer_.append(token.text);
+    if (token.kind == TokenKind::Identifier) {
+        buffer_.append(canonicalIdentifier(token.text));
+    } else {
+        buffer_.append(token.text);
+    }
     atLineStart_ = token.text.back() == '\n';
 }
 

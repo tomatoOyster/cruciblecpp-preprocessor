@@ -546,7 +546,7 @@ CAT(, x)                  // x
 
 ## 测试
 
-当前包含 **63 个 CTest 用例**（正例会预处理后再用 GCC 编译，负例验证退出码；`differential_corpus` 会与 `g++ -E` 做差分）。
+当前包含 **63 个 CTest 用例**（正例会预处理后再用 GCC 编译，负例验证退出码；`differential_corpus` 会与 `g++ -E` 做差分；配置 `GCC_TESTSUITE_DIR` 后为 64 个）。
 
 > 测试规则：新增正例必须使用 `add_compile_case`，保证 `.i` 会被 GCC 实际接受；如果单独增加只做预处理的 `add_test`，必须再配一个 `compile_*` 测试。
 
@@ -568,7 +568,7 @@ cmake -S . -B build-cmake `
   -DGCC_TESTSUITE_DIR="C:/gcc-15.2.0/gcc/testsuite/g++.dg/cpp"
 ```
 
-配置后 CTest 会多一个 `gcc_testsuite_cpp`。当前结果是 **20 pass、0 fail、57 skip**；skip 主要是 `#embed`、C++98 模式、UCN identifier、`-pedantic-errors` 和依赖其他 testsuite fixture 的用例。
+配置后 CTest 会多一个 `gcc_testsuite_cpp`。当前结果是 **26 pass、0 fail、51 skip**；skip 主要是 `#embed`、C++98 模式、`-pedantic-errors` 和依赖其他 testsuite fixture 的用例。
 
 测试覆盖：
 

@@ -7,8 +7,8 @@
 - 新增 `tests/differential/run_differential.py`：同一输入同时跑 CrucibleCpp 和 `g++ -E`，比较退出码、诊断行号/severity、token 流，并把两边的 `.i` 交给 GCC `-fsyntax-only`。
 - 新增真实 corpus：标准库 `<vector>`、`<filesystem>`、`<windows.h>`、宏、include/`__has_include`、字符常量、trigraph 和错误路径。
 - 修复差分测试暴露的问题：`__cplusplus` 缺少 `L` 后缀；`__has_builtin(__builtin_operator_new/delete)` 返回值应为 `201802`；`__has_cpp_attribute(__no_unique_address__)` 需要处理双下划线包裹。
-- 接入 GCC 15.2 `g++.dg/cpp` testsuite（外部路径通过 `GCC_TESTSUITE_DIR` 配置）：当前 20 pass、0 fail、57 skip。
-- 修复 GCC testsuite 暴露的 `/*` within comment 误报、shift 溢出 severity、未终止字符串 severity、`_Pragma` 缺括号、`#pragma pack` 误报、字符串化 raw string 换行、`#warning` C++23 pedantic 文案。
+- 接入 GCC 15.2 `g++.dg/cpp` testsuite（外部路径通过 `GCC_TESTSUITE_DIR` 配置）：当前 26 pass、0 fail、51 skip。
+- 修复 GCC testsuite 暴露的 `/*` within comment 误报、shift 溢出 severity、未终止字符串 severity、`_Pragma` 缺括号、`#pragma pack` 误报、字符串化 raw string 换行、`#warning` C++23 pedantic 文案。\n- 实现 UCN identifier 组合、合法性检查、规范化输出，以及 `#`/`##` 中的 UCN 拼写保留；接入并跑通 GCC 的 `ucn-*` / `ucnid-*` 用例。
 - CTest 增加 `differential_corpus`，总数 63；配置 `GCC_TESTSUITE_DIR` 后额外运行 `gcc_testsuite_cpp`。
 
 ## V2.6.1 — 2026-11-12

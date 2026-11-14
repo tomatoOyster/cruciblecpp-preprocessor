@@ -3,6 +3,7 @@
 #include "Preprocessor.h"
 #include "Tokenizer.h"
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstdio>
@@ -140,6 +141,7 @@ std::optional<std::vector<Token>> SpecialOperator::expandBuiltin(
 Token SpecialOperator::stringize(const std::vector<Token>& rawArgument,
                                  const SourceLocation& loc) const {
     std::string spelling;
+    std::vector<std::size_t> ucnBackslashes;
     bool needSpace = false;
     bool first = true;
 
@@ -155,6 +157,28 @@ Token SpecialOperator::stringize(const std::vector<Token>& rawArgument,
         if (!first && (needSpace || token.leadingSpace)) {
             spelling.push_back(' ');
         }
+        const std::size_t base = spelling.size();
+        if (token.kind == TokenKind::Identifier) {
+            for (std::size_t p = 0; p + 2 < token.text.size();) {
+                if (token.text[p] == '\\' &&
+                    (token.text[p + 1] == 'u' || token.text[p + 1] == 'U')) {
+                    const std::size_t digits = token.text[p + 1] == 'u' ? 4 : 8;
+                    bool valid = p + 2 + digits <= token.text.size();
+                    for (std::size_t k = 0; valid && k < digits; ++k) {
+                        const char h = token.text[p + 2 + k];
+                        valid = (h >= '0' && h <= '9') ||
+                                (h >= 'a' && h <= 'f') ||
+                                (h >= 'A' && h <= 'F');
+                    }
+                    if (valid) {
+                        ucnBackslashes.push_back(base + p);
+                        p += 2 + digits;
+                        continue;
+                    }
+                }
+                ++p;
+            }
+        }
         spelling.append(token.text);
         needSpace = false;
         first = false;
@@ -162,8 +186,13 @@ Token SpecialOperator::stringize(const std::vector<Token>& rawArgument,
 
     std::string literal = "\"";
     literal.reserve(spelling.size() + 2);
-    for (char c : spelling) {
-        if (c == '\\' || c == '"') {
+    for (std::size_t i = 0; i < spelling.size(); ++i) {
+        const char c = spelling[i];
+        const bool preserveUcn =
+            c == '\\' &&
+            std::find(ucnBackslashes.begin(), ucnBackslashes.end(), i) !=
+                ucnBackslashes.end();
+        if ((c == '\\' && !preserveUcn) || c == '"') {
             literal.push_back('\\');
         } else if (c == '\n') {
             literal += "\\n";
