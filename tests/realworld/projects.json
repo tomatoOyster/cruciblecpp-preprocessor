@@ -11,5 +11,35 @@
         "std": "c++17"
       }
     ]
+  },
+  {
+    "name": "fmt",
+    "version": "11.0.2",
+    "url": "https://github.com/fmtlib/fmt/archive/refs/tags/11.0.2.zip",
+    "archive_sha256": "7aa4b58e361de10b8e5d7b6c18aebd98be1886ab3efe43e368527a75cd504ae4",
+    "archive": true,
+    "header": "fmt-11.0.2/include/fmt/format.h",
+    "include": "fmt-11.0.2/include",
+    "cases": [
+      {
+        "file": "tests/realworld/cases/fmt.cpp",
+        "std": "c++17"
+      }
+    ]
+  },
+  {
+    "name": "spdlog",
+    "version": "1.15.3",
+    "url": "https://github.com/gabime/spdlog/archive/refs/tags/v1.15.3.zip",
+    "archive_sha256": "b74274c32c8be5dba70b7006c1d41b7d3e5ff0dff8390c8b6390c1189424e094",
+    "archive": true,
+    "header": "spdlog-1.15.3/include/spdlog/spdlog.h",
+    "include": "spdlog-1.15.3/include",
+    "cases": [
+      {
+        "file": "tests/realworld/cases/spdlog.cpp",
+        "std": "c++17"
+      }
+    ]
   }
 ]

@@ -1,8 +1,8 @@
 # CrucibleCpp Preprocessor
 
-> **V2.7.0** — Windows x64 独立 C++ 预处理器，自动发现 PATH 中的 GCC 头文件目录，直接替代 `g++ -E` 的预处理步骤。
+> **V2.7.1（本地开发版，未发布）** — Windows x64 独立 C++ 预处理器，自动发现 PATH 中的 GCC 头文件目录，直接替代 `g++ -E` 的预处理步骤。
 >
-> [下载 V2.7.0](https://github.com/tomatoOyster/cruciblecpp-preprocessor/releases/tag/v2.7.0) · [Changelog](CHANGELOG.md)
+> [Changelog](CHANGELOG.md)
 
 一个用 C++20 实现的独立 C++ 预处理器，兼容矩阵锁定为：
 
@@ -546,7 +546,7 @@ CAT(, x)                  // x
 
 ## 测试
 
-当前包含 **64 个 CTest 用例**（正例会预处理后再用 GCC 编译，负例验证退出码；`differential_corpus` 会与 `g++ -E` 做差分；配置 `GCC_TESTSUITE_DIR` 后为 65 个）。
+当前包含 **65 个 CTest 用例**（正例会预处理后再用 GCC 编译，负例验证退出码；`differential_corpus` 会与 `g++ -E` 做差分；配置 `GCC_TESTSUITE_DIR` 后为 66 个）。
 
 > 测试规则：新增正例必须使用 `add_compile_case`，保证 `.i` 会被 GCC 实际接受；如果单独增加只做预处理的 `add_test`，必须再配一个 `compile_*` 测试。
 
@@ -570,7 +570,24 @@ cmake -S . -B build-cmake `
 
 配置后 CTest 会多一个 `gcc_testsuite_cpp`。当前结果是 **46 pass、0 fail、31 skip**；skip 主要是 C++98 模式、`-pedantic-errors`、`#embed` 的 `-O2`/ABI 组合和依赖其他 testsuite fixture 的用例。
 
-真实项目 corpus：\n\n第三方源码不进入仓库，只放在 `.gitignore` 的 `tests/corpus-cache/`：\n\n```powershell\npython tests\\realworld\\fetch_realworld.py\npython tests\\realworld\\run_realworld.py `\n  --gcc g++ `\n  --preprocessor build\\cruciblecpp-preprocessor.exe\n```\n\n当前接入：\n\n- nlohmann/json 3.11.3（固定 URL + SHA-256）\n\n测试覆盖：
+真实项目 corpus：
+
+第三方源码不进入仓库，只放在 `.gitignore` 的 `tests/corpus-cache/`：
+
+```powershell
+python tests\\realworld\\fetch_realworld.py
+python tests\\realworld\\run_realworld.py `
+  --gcc g++ `
+  --preprocessor build\\cruciblecpp-preprocessor.exe
+```
+
+当前接入：
+
+- nlohmann/json 3.11.3（固定 URL + SHA-256）
+- fmt 11.0.2（archive + SHA-256）
+- spdlog 1.15.3（archive + SHA-256，含 bundled fmt）
+
+测试覆盖：
 
 - 对象宏、`#undef`、重定义、预定义宏；
 - 函数宏、嵌套展开、递归、空参数、可变参数、`__VA_OPT__`；

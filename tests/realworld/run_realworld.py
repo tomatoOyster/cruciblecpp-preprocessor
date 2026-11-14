@@ -50,10 +50,11 @@ def main() -> int:
                             "reason": "cache missing"})
             continue
 
+        include_root = project_cache / project.get("include", "")
         for case in project.get("cases", []):
             source = REPO / case["file"]
             case_args = list(case.get("args", []))
-            case_args.extend(["-I", str(project_cache)])
+            case_args.extend(["-I", include_root.as_posix()])
             result = differential.run_case(
                 {
                     "name": name + "_" + source.stem,

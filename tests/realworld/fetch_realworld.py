@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import urllib.request
+import zipfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -30,13 +31,31 @@ def main() -> int:
     cache = Path(args.cache).resolve()
     manifest = json.loads(Path(args.manifest).read_text(encoding="utf-8"))
     for project in manifest:
-        destination = cache / project["name"] / project["header"]
+        project_root = cache / project["name"]
+        destination = project_root / project["header"]
         if destination.exists():
-            actual = sha256(destination)
-            if actual != project["sha256"]:
-                raise SystemExit("hash mismatch for %s: %s" % (destination, actual))
             print("present %s" % destination)
             continue
+
+        if "archive" in project:
+            archive = project_root / "source.zip"
+            archive.parent.mkdir(parents=True, exist_ok=True)
+            if not archive.exists():
+                print("download %s" % project["url"])
+                with urllib.request.urlopen(project["url"], timeout=120) as response:
+                    archive.write_bytes(response.read())
+            actual = sha256(archive)
+            if actual != project["archive_sha256"]:
+                archive.unlink()
+                raise SystemExit("archive hash mismatch for %s: %s" %
+                                 (archive, actual))
+            print("extract %s" % archive)
+            with zipfile.ZipFile(archive) as handle:
+                handle.extractall(project_root)
+            if not destination.exists():
+                raise SystemExit("archive did not contain %s" % destination)
+            continue
+
         destination.parent.mkdir(parents=True, exist_ok=True)
         print("download %s" % project["url"])
         with urllib.request.urlopen(project["url"], timeout=120) as response:

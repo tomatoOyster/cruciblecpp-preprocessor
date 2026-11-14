@@ -944,7 +944,7 @@ Preprocessor::Preprocessor(PreprocessorOptions options)
         PchCacheContext context;
         context.compiler = pathFromUtf8(compilerPath_);
         context.compilerVersion = compilerVersion_;
-        context.toolVersion = "2.7.0";
+        context.toolVersion = "2.7.1";
         context.standard = options_.standard;
         context.inputCharset = options_.inputCharset;
         context.executionCharset = options_.executionCharset;
@@ -1504,7 +1504,23 @@ void Preprocessor::handleTextTokens(const std::vector<Token>& tokens) {
 
 bool Preprocessor::handlePragmaText(std::string_view text,
                                     const SourceLocation& loc) {
-    const std::string trimmed = trim(text);
+    std::string trimmed = trim(text);
+    // _Pragma(stringization) can lose the separating space in a macro such as
+    // FMT_PRAGMA_GCC(x) -> _Pragma("GCC x"). Normalize the known GCC
+    // compiler pragmas before dispatching.
+    if (trimmed.rfind("GCC", 0) == 0 && trimmed.size() > 3 &&
+        !std::isspace(static_cast<unsigned char>(trimmed[3]))) {
+        for (const std::string_view name :
+             {"push_options", "pop_options", "optimize", "target",
+              "visibility", "system_header", "diagnostic", "poison",
+              "dependency"}) {
+            const std::string prefix = "GCC" + std::string(name);
+            if (trimmed.rfind(prefix, 0) == 0) {
+                trimmed.insert(3, " ");
+                break;
+            }
+        }
+    }
     const std::size_t space = trimmed.find_first_of(" \t(");
     const std::string word =
         trimmed.substr(0, space == std::string::npos ? trimmed.size() : space);
@@ -1603,6 +1619,8 @@ bool Preprocessor::handlePragmaText(std::string_view text,
 
     if (trimmed.rfind("GCC target", 0) == 0 ||
         trimmed.rfind("GCC optimize", 0) == 0 ||
+        trimmed.rfind("GCC push_options", 0) == 0 ||
+        trimmed.rfind("GCC pop_options", 0) == 0 ||
         trimmed.rfind("GCC visibility", 0) == 0 ||
         trimmed.rfind("pack", 0) == 0) {
         writer_->writePragma(trimmed);
