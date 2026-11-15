@@ -45,6 +45,11 @@
     "file": "characters.cpp"
   },
   {
+    "name": "charset_exec",
+    "file": "charset_exec.cpp",
+    "args": ["-fexec-charset=GBK"]
+  },
+  {
     "name": "trigraph",
     "file": "trigraph.cpp",
     "args": ["-trigraphs"]

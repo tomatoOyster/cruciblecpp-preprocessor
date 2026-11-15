@@ -618,7 +618,7 @@ python tests\\realworld\\run_realworld.py `
 - 未知 preprocessing directive 现在是 error；未知 `#pragma` 默认透传，`--strict` 时作为 error。
 - include guard 通过正常 `#ifndef` 语义处理，未做“检测 guard 后跳过整个文件”的性能优化。
 - 字符常量按 GCC 15.2 / Windows x64 实现：普通字符使用所选执行字符集，`wchar_t` 为 16 位。
-- 支持 `-finput-charset` / `-fexec-charset` 的常用值：`UTF-8`、`UTF-16`、`UTF-16LE/BE`、`GBK`/`CP936`、`CP1252`、`ISO-8859-1`、`ASCII`、`CP<n>`；字符串字面量尚未按执行字符集转码，当前只影响 `#if` 字符常量。
+- 支持 `-finput-charset` / `-fexec-charset` 的常用值：`UTF-8`、`UTF-16`、`UTF-16LE/BE`、`GBK`/`CP936`、`CP1252`、`ISO-8859-1`、`ASCII`、`CP<n>`。`-fexec-charset` 影响 `#if` 字符常量；GCC `-E` 对普通字符串字面量保留源码拼写，CrucibleCpp 也保持一致，不在预处理阶段转码 `.i` 中的字符串。
 - 支持 `-funsigned-char` / `-fsigned-char`；`-funsigned-char` 同时定义 `__CHAR_UNSIGNED__`。
 - `#if` 字符常量的边界行为已按 GCC 15.2 / Windows x64 对齐：`u8` 多字节报 error 但仍取最后一个 UTF-8 code unit；`L` 非 BMP 报 warning 并取低 surrogate；`u` 非 BMP 报 error 并取低 surrogate；`\x` 超出目标宽度报 warning 并使用低位。
 - 引号和尖括号 include 都支持 Windows 反斜杠路径；`#include /*comment*/ <...>` 这类“注释夹在关键字和 header name 之间”的组合仍是边界。
