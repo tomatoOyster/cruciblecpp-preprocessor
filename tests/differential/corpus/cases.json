@@ -9,6 +9,11 @@
     "std": "c++11"
   },
   {
+    "name": "profile_cxx14",
+    "file": "profile.cpp",
+    "std": "c++14"
+  },
+  {
     "name": "profile_cxx17",
     "file": "profile.cpp",
     "std": "c++17"

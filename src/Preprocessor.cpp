@@ -460,6 +460,9 @@ int stdVersionFor(std::string_view standard) {
     if (value == "c++11" || value == "c++0x") {
         return 201103;
     }
+    if (value == "c++14" || value == "c++1y") {
+        return 201402;
+    }
     if (value == "c++17" || value == "c++1z") {
         return 201703;
     }
@@ -990,6 +993,8 @@ bool Preprocessor::loadGccProfile() {
     const char* profileText = kGccProfileCxx20Text;
     if (version == 201103) {
         profileText = kGccProfileCxx11Text;
+    } else if (version == 201402) {
+        profileText = kGccProfileCxx14Text;
     } else if (version == 201703) {
         profileText = kGccProfileCxx17Text;
     }
@@ -1181,8 +1186,8 @@ int Preprocessor::run() {
     currentPresumedFile_ = baseFile_;
 
     const int profileVersion = stdVersionFor(options_.standard);
-    if (profileVersion != 201103 && profileVersion != 201703 &&
-        profileVersion != 202002) {
+    if (profileVersion != 201103 && profileVersion != 201402 &&
+        profileVersion != 201703 && profileVersion != 202002) {
         diagnostics_.warning(
             {}, "no hardcoded GCC 15.2 profile for " + options_.standard +
                     "; using the C++20 profile",

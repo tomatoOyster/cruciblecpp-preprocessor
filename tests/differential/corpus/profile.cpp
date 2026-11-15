@@ -1,6 +1,9 @@
 #if __cplusplus == 201103L
 static_assert(__cpp_constexpr == 200704L, "C++11 constexpr");
 static_assert(__cpp_lambdas == 200907L, "C++11 lambdas");
+#elif __cplusplus == 201402L
+static_assert(__cpp_constexpr == 201304L, "C++14 constexpr");
+static_assert(__cpp_binary_literals == 201304L, "C++14 binary literals");
 #elif __cplusplus == 201703L
 static_assert(__cpp_constexpr == 201603L, "C++17 constexpr");
 static_assert(__cpp_inline_variables == 201606L, "C++17 inline variables");

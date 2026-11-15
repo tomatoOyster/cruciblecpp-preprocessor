@@ -7,6 +7,7 @@ $ErrorActionPreference = "Stop"
 
 $standards = @(
     @{ Name = "Cxx11"; Flag = "c++11" },
+    @{ Name = "Cxx14"; Flag = "c++14" },
     @{ Name = "Cxx17"; Flag = "c++17" },
     @{ Name = "Cxx20"; Flag = "c++20" }
 )
