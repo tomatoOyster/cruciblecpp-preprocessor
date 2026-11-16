@@ -6,7 +6,7 @@
 
 - 增加 GCC13.3 / GCC14.3 的 C++11 / C++14 / C++17 / C++20 predefined-macro profile 和完整 `__has_*` 数据。
 - 增加 `--gcc-version=13|14|15`、`--gcc <g++.exe>`；自动扫描 PATH 并选择最高支持版本。
-- GCC13/14 启用 PCH 时明确报错退出。
+- PCH 支持 GCC13/14/15；PCH 缓存 manifest 记录编译器路径、版本和可执行文件哈希，避免跨版本命中。
 - 增加 GCC15/14/13 三套 CTest 目标选择和三编译器 smoke matrix。
 - 增加 GCC 15.2 的 C++11 / C++14 / C++17 / C++20 独立 predefined-macro profile；`-std` 选择对应的 `__cpp_*` 和内置宏。
 - 实现 GCC 15.2 的 `#embed`：二进制嵌入、`limit`、`gnu::offset`、`prefix`、`suffix`、`if_empty`。
