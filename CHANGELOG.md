@@ -1,5 +1,23 @@
 # Changelog
 
+## V3.0.0 — 2026-11-17
+
+### 许可证变更
+
+- V3.0.0 及以后改为 CC BY-NC 4.0；V2.9.0 及以前继续使用 MIT，旧文本保留在 `LICENSE-MIT`。
+
+### PCH
+
+- 移除 GCC13/14 禁用 PCH 的限制。
+- 修复 GCC13/14 PCH magic 校验：支持 `gpch+014...` / `gpch+015...`。
+- PCH 缓存 manifest 记录编译器路径、版本、可执行文件哈希和选项 hash，跨 GCC 版本不会误命中。
+- GCC13/14/15 的 `pch_policy`、`pch_cache` 全部启用并通过。
+
+### 测试
+
+- 三套完整 CTest：GCC15 65/65、GCC14 65/65、GCC13 65/65。
+- 三套 external differential：13/13；realworld：3/3。
+
 ## V2.9.0 — 2026-11-17
 
 ### 新增

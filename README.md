@@ -1,8 +1,8 @@
 # CrucibleCpp Preprocessor
 
-> **V2.9.0** — Windows x64 独立 C++ 预处理器，自动发现 PATH 中的 GCC 头文件目录，直接替代 `g++ -E` 的预处理步骤。
+> **V3.0.0** — Windows x64 独立 C++ 预处理器，自动发现 PATH 中的 GCC 头文件目录，直接替代 `g++ -E` 的预处理步骤。
 >
-> [下载 V2.9.0](https://github.com/tomatoOyster/cruciblecpp-preprocessor/releases/tag/v2.9.0) · [Changelog](CHANGELOG.md)
+> [下载 V3.0.0](https://github.com/tomatoOyster/cruciblecpp-preprocessor/releases/tag/v3.0.0) · [Changelog](CHANGELOG.md) · [License](LICENSE)
 
 一个用 C++20 实现的独立 C++ 预处理器，兼容矩阵锁定为：
 
@@ -628,7 +628,11 @@ python tests\\realworld\\run_realworld.py `
 
 ## 许可证
 
-MIT，见 [LICENSE](LICENSE)。发行说明见 [CHANGELOG.md](CHANGELOG.md)。
+**V3.0.0 及以后：CC BY-NC 4.0**，见 [LICENSE](LICENSE) 和 [NOTICE](NOTICE)。
+
+**V2.9.0 及以前：MIT**，旧许可证文本保留在 [LICENSE-MIT](LICENSE-MIT)。
+
+CC BY-NC 4.0 允许署名、非商业性的共享和改编；商业使用需要单独授权。发行说明见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 示例
 
