@@ -194,6 +194,8 @@ if(WIN32 AND Python3_Interpreter_FOUND)
                 ${CMAKE_CURRENT_SOURCE_DIR}/realworld/run_realworld.py
                 --gcc ${TEST_COMPILER}
                 --preprocessor $<TARGET_FILE:cruciblecpp-preprocessor>
+                --preprocessor-arg=--gcc
+                --preprocessor-arg=${TEST_COMPILER}
                 --cache ${CMAKE_CURRENT_SOURCE_DIR}/corpus-cache
                 --report ${CMAKE_CURRENT_BINARY_DIR}/realworld-report.json)
     set_tests_properties(realworld_corpus PROPERTIES TIMEOUT 900)
@@ -202,6 +204,8 @@ if(WIN32 AND Python3_Interpreter_FOUND)
                 ${CMAKE_CURRENT_SOURCE_DIR}/differential/run_differential.py
                 --gcc ${TEST_COMPILER}
                 --preprocessor $<TARGET_FILE:cruciblecpp-preprocessor>
+                --preprocessor-arg=--gcc
+                --preprocessor-arg=${TEST_COMPILER}
                 --corpus ${CMAKE_CURRENT_SOURCE_DIR}/differential/corpus
                 --report ${CMAKE_CURRENT_BINARY_DIR}/differential-report.json)
     set_tests_properties(differential_corpus PROPERTIES TIMEOUT 900)

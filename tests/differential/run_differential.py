@@ -242,7 +242,8 @@ def load_cases(corpus: Path) -> list[dict]:
 
 
 def run_case(case: dict, corpus: Path, gcc: str, preprocessor: str,
-             timeout: int, diag_mode: str) -> dict:
+             timeout: int, diag_mode: str,
+             preprocessor_args: list[str] | None = None) -> dict:
     name = case["name"]
     source = case.get("file", name + ".cpp")
     std = case.get("std", "c++20")
@@ -259,7 +260,8 @@ def run_case(case: dict, corpus: Path, gcc: str, preprocessor: str,
             *args, source,
         ]
         our_command = [
-            preprocessor, "-P", "-std=" + std, "-fno-diagnostics-color",
+            preprocessor, *(preprocessor_args or []), "-P", "-std=" + std,
+            "-fno-diagnostics-color",
             *args, source, "-o", str(our_output),
         ]
 
@@ -336,6 +338,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--gcc", required=True)
     parser.add_argument("--preprocessor", required=True)
+    parser.add_argument("--preprocessor-arg", action="append", default=[])
     parser.add_argument("--corpus", required=True)
     parser.add_argument("--timeout", type=int, default=180)
     parser.add_argument("--diag-mode", choices=("none", "line", "full"),
@@ -353,7 +356,8 @@ def main() -> int:
     for case in cases:
         try:
             result = run_case(case, corpus, args.gcc, args.preprocessor,
-                              args.timeout, args.diag_mode)
+                              args.timeout, args.diag_mode,
+                              args.preprocessor_arg)
         except Exception as exc:  # Harness failures are test failures.
             result = {
                 "name": case.get("name", "?"),

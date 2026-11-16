@@ -27,6 +27,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--gcc", required=True)
     parser.add_argument("--preprocessor", required=True)
+    parser.add_argument("--preprocessor-arg", action="append", default=[])
     parser.add_argument("--manifest", default=str(HERE / "projects.json"))
     parser.add_argument("--cache", default=str(REPO / "tests" / "corpus-cache"))
     parser.add_argument("--filter", default="")
@@ -68,6 +69,7 @@ def main() -> int:
                 args.preprocessor,
                 args.timeout,
                 "line",
+                args.preprocessor_arg,
             )
             status = "pass" if result["ok"] else "fail"
             results.append({"name": name + "_" + source.stem,
