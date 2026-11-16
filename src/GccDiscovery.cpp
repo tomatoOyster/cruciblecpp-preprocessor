@@ -13,6 +13,8 @@
 namespace crucible {
 namespace {
 
+std::string normalizedKey(const std::filesystem::path& path);
+
 #ifdef _WIN32
 
 std::wstring utf8ToWide(std::string_view text) {
@@ -57,7 +59,8 @@ bool isRegularFile(const std::filesystem::path& path) {
            std::filesystem::is_regular_file(path, ec) && !ec;
 }
 
-std::filesystem::path findCompiler() {
+std::vector<std::filesystem::path> findCompilerCandidates() {
+    std::vector<std::filesystem::path> candidates;
     std::wstring pathValue;
     DWORD size = GetEnvironmentVariableW(L"PATH", nullptr, 0);
     if (size > 0) {
@@ -84,7 +87,7 @@ std::filesystem::path findCompiler() {
                 const std::filesystem::path candidate =
                     std::filesystem::path(dir) / name;
                 if (isRegularFile(candidate)) {
-                    return candidate;
+                    candidates.push_back(candidate);
                 }
             }
         }
@@ -102,11 +105,20 @@ std::filesystem::path findCompiler() {
         if (length > 0 && length < MAX_PATH) {
             const std::filesystem::path candidate(std::wstring(buffer, length));
             if (isRegularFile(candidate)) {
-                return candidate;
+                candidates.push_back(candidate);
             }
         }
     }
-    return {};
+    std::vector<std::filesystem::path> unique;
+    std::vector<std::string> seen;
+    for (const auto& candidate : candidates) {
+        const std::string key = normalizedKey(candidate);
+        if (std::find(seen.begin(), seen.end(), key) == seen.end()) {
+            seen.push_back(key);
+            unique.push_back(candidate);
+        }
+    }
+    return unique;
 }
 
 std::string captureCompilerVerbose(const std::filesystem::path& compiler,
@@ -199,7 +211,11 @@ std::filesystem::path outputPathFromString(const std::string& text) {
 
 #else
 
-std::filesystem::path findCompiler() { return {}; }
+std::vector<std::filesystem::path> findCompilerCandidates() { return {}; }
+bool isRegularFile(const std::filesystem::path& path) {
+    std::error_code ec;
+    return std::filesystem::is_regular_file(path, ec) && !ec;
+}
 std::string captureCompilerVerbose(const std::filesystem::path&,
                                    std::string& error) {
     error = "GCC discovery is only implemented on Windows";
@@ -242,11 +258,10 @@ std::string normalizedKey(const std::filesystem::path& path) {
 
 } // namespace
 
-static GccDiscovery discoverGccFromPathUncached() {
+static GccDiscovery discoverGccPath(const std::filesystem::path& compiler) {
     GccDiscovery result;
-    const std::filesystem::path compiler = findCompiler();
-    if (compiler.empty()) {
-        result.error = "g++/gcc not found in PATH";
+    if (compiler.empty() || !isRegularFile(compiler)) {
+        result.error = "compiler not found";
         return result;
     }
     result.found = true;
@@ -330,8 +345,24 @@ static GccDiscovery discoverGccFromPathUncached() {
 
 GccDiscovery discoverGccFromPath() {
     // One discovery per process; multi-file invocations reuse it.
-    static const GccDiscovery cached = discoverGccFromPathUncached();
+    static const GccDiscovery cached = [] {
+        const auto candidates = findCompilerCandidates();
+        if (candidates.empty()) {
+            GccDiscovery result;
+            result.error = "g++/gcc not found in PATH";
+            return result;
+        }
+        return discoverGccPath(candidates.front());
+    }();
     return cached;
+}
+
+GccDiscovery discoverGcc(const std::filesystem::path& compiler) {
+    return discoverGccPath(compiler);
+}
+
+std::vector<std::filesystem::path> gccCandidatesFromPath() {
+    return findCompilerCandidates();
 }
 
 } // namespace crucible

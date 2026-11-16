@@ -1,4 +1,5 @@
 set(PREPROCESSOR $<TARGET_FILE:cruciblecpp-preprocessor>)
+find_package(Python3 COMPONENTS Interpreter QUIET)
 set(TEST_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/test_include)
 if(MSVC)
     set(TEST_COMPILE_FLAGS /std:c++20 /Zs)
@@ -24,6 +25,17 @@ set(GCC_IMPLICIT_INCLUDE_FLAGS)
 foreach(dir IN LISTS CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES)
     list(APPEND GCC_IMPLICIT_INCLUDE_FLAGS -isystem "${dir}")
 endforeach()
+
+if(GCC13_COMPILER AND GCC14_COMPILER)
+    add_test(NAME multi_gcc_matrix
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/multi_gcc/run_matrix.py
+                --preprocessor $<TARGET_FILE:cruciblecpp-preprocessor>
+                --compiler 15=${CMAKE_CXX_COMPILER}
+                --compiler 14=${GCC14_COMPILER}
+                --compiler 13=${GCC13_COMPILER})
+    set_tests_properties(multi_gcc_matrix PROPERTIES TIMEOUT 300)
+endif()
 
 add_compile_case(simple test_simple.cpp)
 add_compile_case(function_macro test_function_macro.cpp)

@@ -36,6 +36,8 @@ namespace {
 // on MinGW GCC 15.2.0. __cplusplus is intentionally omitted so that the
 // -std option controls it.
 #include "GccProfileData.inc"
+#include "GccProfileDataGcc13.inc"
+#include "GccProfileDataGcc14.inc"
 
 std::filesystem::path pathFromUtf8(std::string_view text) {
     const std::u8string value(
@@ -801,7 +803,10 @@ Preprocessor::Preprocessor(PreprocessorOptions options)
     }
 
     if (options_.autoGccIncludes) {
-        const GccDiscovery discovery = discoverGccFromPath();
+        const GccDiscovery discovery =
+            options_.gccCompiler.empty()
+                ? discoverGccFromPath()
+                : discoverGcc(options_.gccCompiler);
         if (discovery.found) {
             compilerPath_ = pathToUtf8(discovery.compiler);
             compilerVersion_ = discovery.version;
@@ -990,13 +995,39 @@ bool Preprocessor::loadGccProfile() {
         "__INCLUDE_LEVEL__", "__BASE_FILE__", "__cplusplus"};
 
     const int version = stdVersionFor(options_.standard);
-    const char* profileText = kGccProfileCxx20Text;
-    if (version == 201103) {
-        profileText = kGccProfileCxx11Text;
-    } else if (version == 201402) {
-        profileText = kGccProfileCxx14Text;
-    } else if (version == 201703) {
-        profileText = kGccProfileCxx17Text;
+    const bool gcc13 = options_.gccMajor == 13;
+    const bool gcc14 = options_.gccMajor == 14;
+    const char* profileText = nullptr;
+    if (gcc13) {
+        if (version == 201103) {
+            profileText = kGccProfileGcc13Cxx11Text;
+        } else if (version == 201402) {
+            profileText = kGccProfileGcc13Cxx14Text;
+        } else if (version == 201703) {
+            profileText = kGccProfileGcc13Cxx17Text;
+        } else {
+            profileText = kGccProfileGcc13Cxx20Text;
+        }
+    } else if (gcc14) {
+        if (version == 201103) {
+            profileText = kGccProfileGcc14Cxx11Text;
+        } else if (version == 201402) {
+            profileText = kGccProfileGcc14Cxx14Text;
+        } else if (version == 201703) {
+            profileText = kGccProfileGcc14Cxx17Text;
+        } else {
+            profileText = kGccProfileGcc14Cxx20Text;
+        }
+    } else {
+        if (version == 201103) {
+            profileText = kGccProfileCxx11Text;
+        } else if (version == 201402) {
+            profileText = kGccProfileCxx14Text;
+        } else if (version == 201703) {
+            profileText = kGccProfileCxx17Text;
+        } else {
+            profileText = kGccProfileCxx20Text;
+        }
     }
     std::istringstream stream(profileText);
     std::string line;
@@ -1130,6 +1161,15 @@ bool Preprocessor::defineFromCommandLine(const std::string& spec) {
 }
 
 bool Preprocessor::applyCommandLine() {
+    if (options_.gccMajor != 15 &&
+        (options_.pchPolicy != PchPolicy::Ignore ||
+         !options_.pchCacheDir.empty() ||
+         !options_.pchCacheStatsFile.empty())) {
+        diagnostics_.error(
+            {}, "PCH is only supported with GCC 15; GCC " +
+                    std::to_string(options_.gccMajor) + " cannot use PCH");
+        return false;
+    }
     loadGccProfile();
 
     if (options_.unsignedChar) {
@@ -2364,7 +2404,7 @@ bool Preprocessor::evaluateCondition(const std::vector<Token>& expression,
             if (parseCppAttributeName(definedProcessed, i + 1,
                                       attributeName, close)) {
                 const int value = gccCppAttributeValue(
-                    attributeName, options_.standard);
+                    attributeName, options_.standard, options_.gccMajor);
                 specialProcessed.push_back(
                     makeNumber(std::to_string(value), token.loc));
                 i = close + 1;
@@ -2409,15 +2449,15 @@ bool Preprocessor::evaluateCondition(const std::vector<Token>& expression,
                     }
                     int value = 0;
                     if (token.text == "__has_builtin") {
-                        value = gccBuiltinValue(argument);
+                        value = gccBuiltinValue(argument, options_.gccMajor);
                     } else if (token.text == "__has_attribute") {
-                        value = gccAttributeAvailable(argument) ? 1 : 0;
+                        value = gccAttributeAvailable(argument, options_.gccMajor) ? 1 : 0;
                     } else if (token.text == "__has_feature" ||
                                token.text == "__has_extension") {
                         value = gccFeatureAvailable(
                                     argument,
                                     token.text == "__has_extension",
-                                    options_.standard)
+                                    options_.standard, options_.gccMajor)
                                     ? 1
                                     : 0;
                     }
@@ -2526,7 +2566,7 @@ bool Preprocessor::evaluateCondition(const std::vector<Token>& expression,
             std::size_t close = 0;
             if (parseCppAttributeName(expanded, i + 1, attributeName, close)) {
                 const int value = gccCppAttributeValue(
-                    attributeName, options_.standard);
+                    attributeName, options_.standard, options_.gccMajor);
                 postExpansion.push_back(
                     makeNumber(std::to_string(value), token.loc));
                 i = close + 1;
@@ -2566,15 +2606,15 @@ bool Preprocessor::evaluateCondition(const std::vector<Token>& expression,
                     }
                     int value = 0;
                     if (token.text == "__has_builtin") {
-                        value = gccBuiltinValue(argument);
+                        value = gccBuiltinValue(argument, options_.gccMajor);
                     } else if (token.text == "__has_attribute") {
-                        value = gccAttributeAvailable(argument) ? 1 : 0;
+                        value = gccAttributeAvailable(argument, options_.gccMajor) ? 1 : 0;
                     } else if (token.text == "__has_feature" ||
                                token.text == "__has_extension") {
                         value = gccFeatureAvailable(
                                     argument,
                                     token.text == "__has_extension",
-                                    options_.standard)
+                                    options_.standard, options_.gccMajor)
                                     ? 1
                                     : 0;
                     }

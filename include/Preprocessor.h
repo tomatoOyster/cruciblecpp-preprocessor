@@ -132,6 +132,8 @@ struct PreprocessorOptions {
     int maxIncludeDepth = 200;
     int maxErrors = 20;
     std::string standard = "c++20";
+    int gccMajor = 15;
+    std::filesystem::path gccCompiler;
     std::string inputCharset = "UTF-8";
     std::string executionCharset = "UTF-8";
     bool unsignedChar = false;

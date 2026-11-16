@@ -133,6 +133,16 @@ def collect_features(source: str) -> set[str]:
     return features
 
 
+def supports_operator(gcc: str, name: str) -> bool:
+    process = subprocess.run(
+        [gcc, "-E", "-P", "-x", "c++", "-"],
+        input=f"#ifdef {name}\nSUPPORTED\n#endif\n",
+        text=True,
+        capture_output=True,
+    )
+    return process.returncode == 0 and "SUPPORTED" in process.stdout
+
+
 def run_query(gcc: str, standard: str, lines: list[str]) -> str:
     process = subprocess.run(
         [gcc, "-std=" + standard, "-E", "-P", "-x", "c++", "-"],
@@ -232,17 +242,25 @@ def main() -> int:
     parser.add_argument("--gcc-source", required=True)
     parser.add_argument("--gcc", default="g++")
     parser.add_argument("--output", required=True)
+    parser.add_argument("--namespace", default="gcc_data")
+    parser.add_argument("--expected-version", default="")
     args = parser.parse_args()
 
     version = subprocess.run(
         [args.gcc, "-dumpfullversion"], text=True, capture_output=True
     ).stdout.strip()
-    if not version.startswith("15.2"):
-        raise RuntimeError("expected GCC 15.2, got " + version)
+    if args.expected_version and not version.startswith(args.expected_version):
+        raise RuntimeError(
+            "expected GCC " + args.expected_version + ", got " + version
+        )
 
     builtins = collect_builtins(args.gcc_source)
     attributes = collect_attributes(args.gcc_source)
-    features = collect_features(args.gcc_source)
+    feature_supported = supports_operator(args.gcc, "__has_feature")
+    extension_supported = supports_operator(args.gcc, "__has_extension")
+    features = collect_features(args.gcc_source) if (
+        feature_supported or extension_supported
+    ) else set()
     cpp_candidates = set(attributes)
     cpp_candidates.update(
         {
@@ -267,11 +285,11 @@ def main() -> int:
     true_features = {
         standard: query_members(args.gcc, "feature", features, standard)
         for standard in STANDARDS
-    }
+    } if feature_supported else {standard: set() for standard in STANDARDS}
     true_extensions = {
         standard: query_members(args.gcc, "extension", features, standard)
         for standard in STANDARDS
-    }
+    } if extension_supported else {standard: set() for standard in STANDARDS}
     cpp_attributes = {
         standard: query_cpp_attributes(args.gcc, cpp_candidates, standard)
         for standard in STANDARDS
@@ -285,19 +303,23 @@ def main() -> int:
     output = os.path.abspath(args.output)
     os.makedirs(os.path.dirname(output), exist_ok=True)
     with open(output, "w", encoding="utf-8", newline="\n") as handle:
-        handle.write("// Generated from GCC 15.2 source and compiler. Do not edit.\n")
+        handle.write("// Generated from GCC source and compiler. Do not edit.\n")
         handle.write(f"// GCC version: {version}\n")
-        handle.write("namespace crucible::gcc_data {\n\n")
+        handle.write(f"namespace crucible::{args.namespace} {{\n\n")
         write_array(handle, "kBuiltins", true_builtins)
         handle.write(
             "struct BuiltinValue { std::string_view name; int value; };\n"
         )
         handle.write("inline constexpr BuiltinValue kBuiltinValues[] = {\n")
+        wrote_value = False
         for name in sorted(builtin_values):
             if builtin_values[name] != 1:
                 handle.write(
                     f"    {{{cpp_string(name)}, {builtin_values[name]}}},\n"
                 )
+                wrote_value = True
+        if not wrote_value:
+            handle.write('    {"__crucible_none__", 0},\n')
         handle.write("};\n\n")
         write_array(handle, "kAttributes", true_attributes)
         handle.write(
@@ -334,7 +356,7 @@ def main() -> int:
                 f"    {{{cpp_string(name)}, {values[0]}, {values[1]}, {values[2]}}},\n"
             )
         handle.write("};\n\n")
-        handle.write("} // namespace crucible::gcc_data\n")
+        handle.write(f"}} // namespace crucible::{args.namespace}\n")
 
     print(
         f"wrote {output}: builtins={len(true_builtins)} "

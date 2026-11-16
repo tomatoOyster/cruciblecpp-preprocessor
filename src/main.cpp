@@ -121,6 +121,8 @@ void printUsage(std::ostream& out) {
            "  -I, --include-dir <dir>      Add a user include directory (repeatable)\n"
            "  -isystem <dir>               Add a system include directory (repeatable)\n"
            "  --embed-dir <dir>            Add a #embed search directory (repeatable)\n"
+           "  --gcc-version=13|14|15       Select the target GCC major version\n"
+           "  --gcc <g++.exe>              Select a specific target compiler\n"
            "  -nostdinc                    Do not auto-discover GCC include directories\n"
            "  --no-gcc-includes            Same as -nostdinc\n"
            "  --print-gcc-includes         Print discovered GCC include paths and exit\n"
@@ -215,6 +217,8 @@ int main(int argc, char** argv) {
     crucible::PreprocessorOptions options;
     std::vector<std::filesystem::path> inputs;
     std::vector<std::filesystem::path> outputs;
+    std::string requestedGccVersion;
+    std::filesystem::path requestedGccPath;
     bool colorSpecified = false;
     const std::vector<std::string> arguments = collectArguments(argc, argv);
 
@@ -276,6 +280,22 @@ int main(int argc, char** argv) {
         if (arg.rfind("--embed-dir=", 0) == 0) {
             options.embedDirs.push_back(
                 pathFromUtf8(arg.substr(12)));
+            continue;
+        }
+        if (arg == "--gcc-version" || arg.rfind("--gcc-version=", 0) == 0) {
+            requestedGccVersion = arg == "--gcc-version"
+                                      ? nextValue(arg.c_str())
+                                      : arg.substr(14);
+            if (requestedGccVersion != "13" &&
+                requestedGccVersion != "14" &&
+                requestedGccVersion != "15") {
+                std::cerr << "error: --gcc-version expects 13, 14, or 15\n";
+                return 2;
+            }
+            continue;
+        }
+        if (arg == "--gcc") {
+            requestedGccPath = pathFromUtf8(nextValue(arg.c_str()));
             continue;
         }
         if (arg == "-nostdinc" || arg == "--no-gcc-includes") {
@@ -644,6 +664,78 @@ int main(int argc, char** argv) {
     if (options.generateDependencies && inputs.size() > 1) {
         std::cerr << "error: depfile generation supports one input at a time\n";
         return 2;
+    }
+
+    auto majorVersion = [](const std::string& version) -> int {
+        int major = 0;
+        for (char c : version) {
+            if (c < '0' || c > '9') {
+                break;
+            }
+            major = major * 10 + (c - '0');
+        }
+        return major;
+    };
+    auto supportedMajor = [](int major) {
+        return major == 13 || major == 14 || major == 15;
+    };
+
+    if (!requestedGccPath.empty()) {
+        const crucible::GccDiscovery discovery =
+            crucible::discoverGcc(requestedGccPath);
+        if (!discovery.found) {
+            std::cerr << "error: " << discovery.error << '\n';
+            return 1;
+        }
+        const int major = majorVersion(discovery.version);
+        if (!supportedMajor(major)) {
+            std::cerr << "error: unsupported GCC version '"
+                      << discovery.version << "' (expected 13, 14, or 15)\n";
+            return 1;
+        }
+        if (!requestedGccVersion.empty() &&
+            requestedGccVersion != std::to_string(major)) {
+            std::cerr << "error: --gcc is GCC " << major
+                      << " but --gcc-version=" << requestedGccVersion
+                      << " was requested\n";
+            return 2;
+        }
+        options.gccMajor = major;
+        options.gccCompiler = discovery.compiler;
+    } else if (!requestedGccVersion.empty() || options.autoGccIncludes) {
+        const auto candidates = crucible::gccCandidatesFromPath();
+        bool found = false;
+        crucible::GccDiscovery selected;
+        int selectedMajor = 0;
+        for (const auto& candidate : candidates) {
+            const crucible::GccDiscovery discovery =
+                crucible::discoverGcc(candidate);
+            if (!discovery.found) {
+                continue;
+            }
+            const int major = majorVersion(discovery.version);
+            if (!supportedMajor(major)) {
+                continue;
+            }
+            if (!requestedGccVersion.empty() &&
+                requestedGccVersion != std::to_string(major)) {
+                continue;
+            }
+            if (!found || major > selectedMajor) {
+                found = true;
+                selected = discovery;
+                selectedMajor = major;
+            }
+        }
+        if (found) {
+            options.gccMajor = selectedMajor;
+            options.gccCompiler = selected.compiler;
+        } else if (!requestedGccVersion.empty()) {
+            std::cerr << "error: GCC " << requestedGccVersion
+                      << " was requested but no matching g++/gcc was found "
+                         "on PATH\n";
+            return 1;
+        }
     }
 
     crucible::CharsetEncoding charset;
