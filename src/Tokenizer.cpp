@@ -686,9 +686,13 @@ std::vector<Token> Tokenizer::tokenize(
                 const std::size_t start = i;
                 const std::uint32_t startLine = line;
                 const std::uint32_t startColumn = column;
-                tokens.push_back(makeToken(
+                Token punctuator = makeToken(
                     TokenKind::Punctuator, canonicalPunct(p), startLine,
-                    startColumn, start, pendingSpace, atLineStart));
+                    startColumn, start, pendingSpace, atLineStart);
+                if (punctuator.text != p) {
+                    punctuator.originalText = std::string(p);
+                }
+                tokens.push_back(std::move(punctuator));
                 atLineStart = false;
                 pendingSpace = false;
                 i += p.size();

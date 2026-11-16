@@ -48,6 +48,9 @@ using HideSet = std::unordered_set<std::string>;
 struct Token {
     TokenKind kind = TokenKind::Identifier;
     std::string text;
+    // Digraphs are normalized for parsing, but GCC -E preserves their
+    // original spelling in the emitted token stream.
+    std::string originalText;
     SourceLocation loc;
     bool leadingSpace = false;
     bool atLineStart = false;

@@ -243,7 +243,8 @@ def load_cases(corpus: Path) -> list[dict]:
 
 def run_case(case: dict, corpus: Path, gcc: str, preprocessor: str,
              timeout: int, diag_mode: str,
-             preprocessor_args: list[str] | None = None) -> dict:
+             preprocessor_args: list[str] | None = None,
+             require_success: bool = False) -> dict:
     name = case["name"]
     source = case.get("file", name + ".cpp")
     std = case.get("std", "c++20")
@@ -286,6 +287,11 @@ def run_case(case: dict, corpus: Path, gcc: str, preprocessor: str,
         if gcc_failed != our_failed:
             problems.append(
                 "exit status differs: gcc=%d crucible=%d"
+                % (gcc_result.returncode, our_result.returncode)
+            )
+        if require_success and (gcc_failed or our_failed):
+            problems.append(
+                "real-project case failed: gcc=%d crucible=%d"
                 % (gcc_result.returncode, our_result.returncode)
             )
 

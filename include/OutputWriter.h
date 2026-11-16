@@ -27,6 +27,7 @@ private:
     bool lineMarkers_;
     std::string buffer_;
     bool atLineStart_ = true;
+    bool previousAngleDigraph_ = false;
 };
 
 } // namespace crucible

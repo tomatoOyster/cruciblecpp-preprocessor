@@ -89,12 +89,17 @@ void OutputWriter::writeToken(const Token& token) {
         return;
     }
 
-    if (!atLineStart_) {
+    const bool joinAngleColon =
+        previousAngleDigraph_ && token.text == ":";
+    if (!atLineStart_ && !joinAngleColon) {
         // Whitespace between every pair of tokens is always safe and avoids
         // accidental token pasting in the emitted preprocessed source.
         buffer_.push_back(' ');
     }
-    if (token.kind == TokenKind::Identifier) {
+    previousAngleDigraph_ = token.originalText == "<:";
+    if (!token.originalText.empty()) {
+        buffer_.append(token.originalText);
+    } else if (token.kind == TokenKind::Identifier) {
         buffer_.append(canonicalIdentifier(token.text));
     } else {
         buffer_.append(token.text);
@@ -103,6 +108,7 @@ void OutputWriter::writeToken(const Token& token) {
 }
 
 void OutputWriter::writeNewline() {
+    previousAngleDigraph_ = false;
     buffer_.push_back('\n');
     atLineStart_ = true;
 }
@@ -150,6 +156,7 @@ void OutputWriter::ensureNewline() {
 }
 
 void OutputWriter::clear() {
+    previousAngleDigraph_ = false;
     buffer_.clear();
     atLineStart_ = true;
 }

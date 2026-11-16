@@ -70,6 +70,7 @@ def main() -> int:
                 args.timeout,
                 "line",
                 args.preprocessor_arg,
+                require_success=True,
             )
             status = "pass" if result["ok"] else "fail"
             results.append({"name": name + "_" + source.stem,
