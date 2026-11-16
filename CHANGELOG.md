@@ -1,9 +1,13 @@
 # Changelog
 
-## V2.7.1 — 2026-11-14
+## V2.9.0 — 2026-11-17
 
 ### 新增
 
+- 增加 GCC13.3 / GCC14.3 的 C++11 / C++14 / C++17 / C++20 predefined-macro profile 和完整 `__has_*` 数据。
+- 增加 `--gcc-version=13|14|15`、`--gcc <g++.exe>`；自动扫描 PATH 并选择最高支持版本。
+- GCC13/14 启用 PCH 时明确报错退出。
+- 增加 GCC15/14/13 三套 CTest 目标选择和三编译器 smoke matrix。
 - 增加 GCC 15.2 的 C++11 / C++14 / C++17 / C++20 独立 predefined-macro profile；`-std` 选择对应的 `__cpp_*` 和内置宏。
 - 实现 GCC 15.2 的 `#embed`：二进制嵌入、`limit`、`gnu::offset`、`prefix`、`suffix`、`if_empty`。
 - 实现 `__has_embed`，返回 0/1/2（缺失/非空/空资源）。
