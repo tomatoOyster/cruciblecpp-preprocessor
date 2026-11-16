@@ -73,8 +73,6 @@ add_compile_case(standard_headers test_standard_headers.cpp ${GCC_IMPLICIT_INCLU
 add_compile_case(standard_headers_auto test_standard_headers.cpp)
 add_compile_case(windows_header test_windows_header.cpp ${GCC_IMPLICIT_INCLUDE_FLAGS})
 
-# PCH is intentionally GCC15-only until the version-isolated cache lands.
-if(TEST_GCC_VERSION STREQUAL "15")
 # GCC .gch files are ignored like g++ -E; this test also covers CMake PCH
 # forced includes and the --pch diagnostics policy.
 add_test(NAME pch_policy
@@ -97,7 +95,6 @@ add_test(NAME pch_cache
             -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/pch
             -DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
             -P ${CMAKE_CURRENT_SOURCE_DIR}/test_pch_cache.cmake)
-endif()
 add_compile_case(angle_header_name test_angle_header_name.cpp
                  -I ${CMAKE_CURRENT_SOURCE_DIR})
 

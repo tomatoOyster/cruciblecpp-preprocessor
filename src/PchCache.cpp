@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <chrono>
 #include <cstdint>
 #include <fstream>
@@ -308,8 +309,20 @@ bool hasGccPchMagic(const std::filesystem::path& path) {
     if (magic.substr(0, 5) != "gpch+") {
         return false;
     }
-    const std::size_t colon = magic.find(':');
-    return colon != std::string_view::npos && colon >= 6;
+    // GCC 13/14/15 all begin with gpch+ followed by the compiler version,
+    // e.g. "gpch+014_" and "gpch+015_".  Older code incorrectly required a
+    // colon, which rejected every GCC 13/14 PCH.
+    std::size_t i = 5;
+    if (i >= magic.size() ||
+        !std::isdigit(static_cast<unsigned char>(magic[i]))) {
+        return false;
+    }
+    while (i < magic.size() &&
+           (std::isdigit(static_cast<unsigned char>(magic[i])) ||
+            magic[i] == '.')) {
+        ++i;
+    }
+    return i < magic.size();
 }
 
 } // namespace

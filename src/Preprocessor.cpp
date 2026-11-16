@@ -1161,15 +1161,6 @@ bool Preprocessor::defineFromCommandLine(const std::string& spec) {
 }
 
 bool Preprocessor::applyCommandLine() {
-    if (options_.gccMajor != 15 &&
-        (options_.pchPolicy != PchPolicy::Ignore ||
-         !options_.pchCacheDir.empty() ||
-         !options_.pchCacheStatsFile.empty())) {
-        diagnostics_.error(
-            {}, "PCH is only supported with GCC 15; GCC " +
-                    std::to_string(options_.gccMajor) + " cannot use PCH");
-        return false;
-    }
     loadGccProfile();
 
     if (options_.unsignedChar) {
