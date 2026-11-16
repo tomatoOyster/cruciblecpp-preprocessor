@@ -25,7 +25,9 @@ static_assert(true, "__has_builtin is visible to #ifdef");
 #error nodiscard attribute version
 #endif
 
-static_assert(__GNUC__ == 15, "GCC major version profile");
+#if __GNUC__ < 13 || __GNUC__ > 15
+#error unsupported GCC major version
+#endif
 static_assert(_WIN32 == 1, "Windows target macro");
 static_assert(__x86_64__ == 1, "x86_64 target macro");
 static_assert(__SIZEOF_POINTER__ == 8, "pointer size profile");

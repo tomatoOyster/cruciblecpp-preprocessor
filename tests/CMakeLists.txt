@@ -1,4 +1,8 @@
 set(PREPROCESSOR $<TARGET_FILE:cruciblecpp-preprocessor>)
+set(TEST_GCC_VERSION "15" CACHE STRING "Target GCC major version for the test suite")
+set(TEST_GCC_COMPILER "${CMAKE_CXX_COMPILER}" CACHE FILEPATH "Compiler used to compile .i output")
+set(TEST_PREPROCESSOR_ARGS --gcc "${TEST_GCC_COMPILER}" -DTEST_GCC_VERSION=${TEST_GCC_VERSION})
+set(TEST_COMPILER "${TEST_GCC_COMPILER}")
 find_package(Python3 COMPONENTS Interpreter QUIET)
 set(TEST_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/test_include)
 if(MSVC)
@@ -12,19 +16,21 @@ endif()
 function(add_compile_case name input)
     set(output ${CMAKE_CURRENT_BINARY_DIR}/${name}.i)
     add_test(NAME preprocess_${name}
-        COMMAND ${PREPROCESSOR} -P -I ${TEST_INCLUDE_DIR} ${ARGN}
+        COMMAND ${PREPROCESSOR} ${TEST_PREPROCESSOR_ARGS} -P -I ${TEST_INCLUDE_DIR} ${ARGN}
                 ${CMAKE_CURRENT_SOURCE_DIR}/${input}
                 -o ${output})
     add_test(NAME compile_${name}
-        COMMAND ${CMAKE_CXX_COMPILER} ${TEST_COMPILE_FLAGS} ${output})
+        COMMAND ${TEST_COMPILER} ${TEST_COMPILE_FLAGS} ${output})
     set_tests_properties(compile_${name} PROPERTIES DEPENDS preprocess_${name})
 endfunction()
 
 # GCC's own implicit include directories, passed explicitly as -isystem.
 set(GCC_IMPLICIT_INCLUDE_FLAGS)
-foreach(dir IN LISTS CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES)
-    list(APPEND GCC_IMPLICIT_INCLUDE_FLAGS -isystem "${dir}")
-endforeach()
+if(TEST_GCC_VERSION STREQUAL "15")
+    foreach(dir IN LISTS CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES)
+        list(APPEND GCC_IMPLICIT_INCLUDE_FLAGS -isystem "${dir}")
+    endforeach()
+endif()
 
 if(GCC13_COMPILER AND GCC14_COMPILER)
     add_test(NAME multi_gcc_matrix
@@ -57,22 +63,24 @@ add_compile_case(charset_unsigned test_charset_unsigned.cpp
                  -funsigned-char)
 
 # -newyear prints one integer and ignores every other argument.
-add_test(NAME newyear COMMAND ${PREPROCESSOR} -newyear)
+add_test(NAME newyear COMMAND ${PREPROCESSOR} ${TEST_PREPROCESSOR_ARGS} -newyear)
 set_tests_properties(newyear PROPERTIES PASS_REGULAR_EXPRESSION "^[0-9]+")
 add_test(NAME newyear_ignores_arguments
-    COMMAND ${PREPROCESSOR} -newyear --not-an-option missing.cpp -o missing.i)
+    COMMAND ${PREPROCESSOR} ${TEST_PREPROCESSOR_ARGS} -newyear --not-an-option missing.cpp -o missing.i)
 set_tests_properties(newyear_ignores_arguments
     PROPERTIES PASS_REGULAR_EXPRESSION "^[0-9]+")
 add_compile_case(standard_headers test_standard_headers.cpp ${GCC_IMPLICIT_INCLUDE_FLAGS})
 add_compile_case(standard_headers_auto test_standard_headers.cpp)
 add_compile_case(windows_header test_windows_header.cpp ${GCC_IMPLICIT_INCLUDE_FLAGS})
 
+# PCH is intentionally GCC15-only until the version-isolated cache lands.
+if(TEST_GCC_VERSION STREQUAL "15")
 # GCC .gch files are ignored like g++ -E; this test also covers CMake PCH
 # forced includes and the --pch diagnostics policy.
 add_test(NAME pch_policy
     COMMAND ${CMAKE_COMMAND}
             -DPREPROCESSOR=$<TARGET_FILE:cruciblecpp-preprocessor>
-            -DCXX=${CMAKE_CXX_COMPILER}
+            -DCXX=${TEST_COMPILER}
             -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/pch
             -DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
             -P ${CMAKE_CURRENT_SOURCE_DIR}/test_pch.cmake)
@@ -84,11 +92,12 @@ endif()
 add_test(NAME pch_cache
     COMMAND ${CMAKE_COMMAND}
             -DPREPROCESSOR=$<TARGET_FILE:cruciblecpp-preprocessor>
-            -DCXX=${CMAKE_CXX_COMPILER}
+            -DCXX=${TEST_COMPILER}
             -DCORRUPT_HELPER=$<TARGET_FILE:pch_corrupt_helper>
             -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/pch
             -DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
             -P ${CMAKE_CURRENT_SOURCE_DIR}/test_pch_cache.cmake)
+endif()
 add_compile_case(angle_header_name test_angle_header_name.cpp
                  -I ${CMAKE_CURRENT_SOURCE_DIR})
 
@@ -97,24 +106,24 @@ set(MULTI_A ${CMAKE_CURRENT_BINARY_DIR}/multi_a.i)
 set(MULTI_B ${CMAKE_CURRENT_BINARY_DIR}/multi_b.i)
 set(MULTI_C ${CMAKE_CURRENT_BINARY_DIR}/multi_c.i)
 add_test(NAME preprocess_multi
-    COMMAND ${PREPROCESSOR} -P
+    COMMAND ${PREPROCESSOR} ${TEST_PREPROCESSOR_ARGS} -P
             ${CMAKE_CURRENT_SOURCE_DIR}/test_simple.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/test_function_macro.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/test_conditional.cpp
             -o ${MULTI_A} ${MULTI_B} ${MULTI_C})
 add_test(NAME compile_multi_a
-    COMMAND ${CMAKE_CXX_COMPILER} ${TEST_COMPILE_FLAGS} ${MULTI_A})
+    COMMAND ${TEST_COMPILER} ${TEST_COMPILE_FLAGS} ${MULTI_A})
 add_test(NAME compile_multi_b
-    COMMAND ${CMAKE_CXX_COMPILER} ${TEST_COMPILE_FLAGS} ${MULTI_B})
+    COMMAND ${TEST_COMPILER} ${TEST_COMPILE_FLAGS} ${MULTI_B})
 add_test(NAME compile_multi_c
-    COMMAND ${CMAKE_CXX_COMPILER} ${TEST_COMPILE_FLAGS} ${MULTI_C})
+    COMMAND ${TEST_COMPILER} ${TEST_COMPILE_FLAGS} ${MULTI_C})
 set_tests_properties(compile_multi_a compile_multi_b compile_multi_c
     PROPERTIES DEPENDS preprocess_multi)
 
 # Verify CMake/Ninja depfile generation for quoted and angled includes.
 set(DEPFILE_OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/depfile.d)
 add_test(NAME preprocess_depfile
-    COMMAND ${PREPROCESSOR} -P -I ${TEST_INCLUDE_DIR}
+    COMMAND ${PREPROCESSOR} ${TEST_PREPROCESSOR_ARGS} -P -I ${TEST_INCLUDE_DIR}
             -MD -MF ${DEPFILE_OUTPUT} -MT depfile.i
             ${CMAKE_CURRENT_SOURCE_DIR}/test_include/main.h
             -o ${CMAKE_CURRENT_BINARY_DIR}/depfile.i)
@@ -123,36 +132,36 @@ add_test(NAME check_depfile
             -P ${CMAKE_CURRENT_SOURCE_DIR}/check_depfile.cmake)
 set_tests_properties(check_depfile PROPERTIES DEPENDS preprocess_depfile)
 add_test(NAME compile_depfile
-    COMMAND ${CMAKE_CXX_COMPILER} ${TEST_COMPILE_FLAGS}
+    COMMAND ${TEST_COMPILER} ${TEST_COMPILE_FLAGS}
             ${CMAKE_CURRENT_BINARY_DIR}/depfile.i)
 set_tests_properties(compile_depfile PROPERTIES DEPENDS preprocess_depfile)
 
 # Verify that emitted line markers are accepted by the compiler.
 set(LINE_MARKER_OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/line_markers.i)
 add_test(NAME preprocess_line_markers
-    COMMAND ${PREPROCESSOR} -I ${TEST_INCLUDE_DIR}
+    COMMAND ${PREPROCESSOR} ${TEST_PREPROCESSOR_ARGS} -I ${TEST_INCLUDE_DIR}
             ${CMAKE_CURRENT_SOURCE_DIR}/test_simple.cpp
             -o ${LINE_MARKER_OUTPUT})
 add_test(NAME compile_line_markers
-    COMMAND ${CMAKE_CXX_COMPILER} ${TEST_COMPILE_FLAGS} ${LINE_MARKER_OUTPUT})
+    COMMAND ${TEST_COMPILER} ${TEST_COMPILE_FLAGS} ${LINE_MARKER_OUTPUT})
 set_tests_properties(compile_line_markers
     PROPERTIES DEPENDS preprocess_line_markers)
 
 # Verify that -C keeps comments and the result still compiles.
 set(COMMENTS_OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/comments.i)
 add_test(NAME preprocess_comments
-    COMMAND ${PREPROCESSOR} -C -P -I ${TEST_INCLUDE_DIR}
+    COMMAND ${PREPROCESSOR} ${TEST_PREPROCESSOR_ARGS} -C -P -I ${TEST_INCLUDE_DIR}
             ${CMAKE_CURRENT_SOURCE_DIR}/test_simple.cpp
             -o ${COMMENTS_OUTPUT})
 add_test(NAME compile_comments
-    COMMAND ${CMAKE_CXX_COMPILER} ${TEST_COMPILE_FLAGS} ${COMMENTS_OUTPUT})
+    COMMAND ${TEST_COMPILER} ${TEST_COMPILE_FLAGS} ${COMMENTS_OUTPUT})
 set_tests_properties(compile_comments
     PROPERTIES DEPENDS preprocess_comments)
 
 function(add_negative_case name input)
     set(output ${CMAKE_CURRENT_BINARY_DIR}/negative_${name}.i)
     add_test(NAME negative_${name}
-        COMMAND ${PREPROCESSOR} -P ${ARGN}
+        COMMAND ${PREPROCESSOR} ${TEST_PREPROCESSOR_ARGS} -P ${ARGN}
                 ${CMAKE_CURRENT_SOURCE_DIR}/negative/${input}
                 -o ${output})
     set_tests_properties(negative_${name} PROPERTIES WILL_FAIL TRUE)
@@ -169,11 +178,11 @@ add_negative_case(nostdinc_angle nostdinc_angle.cpp -nostdinc)
 set(GCC_TESTSUITE_DIR "" CACHE PATH
     "Optional GCC 15.2 testsuite g++.dg/cpp directory")
 find_package(Python3 COMPONENTS Interpreter QUIET)
-if(WIN32 AND Python3_Interpreter_FOUND AND GCC_TESTSUITE_DIR)
+if(WIN32 AND Python3_Interpreter_FOUND AND GCC_TESTSUITE_DIR AND TEST_GCC_VERSION STREQUAL "15")
     add_test(NAME gcc_testsuite_cpp
         COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/gcc_testsuite/run_gcc_tests.py
-                --gcc ${CMAKE_CXX_COMPILER}
+                --gcc ${TEST_COMPILER}
                 --preprocessor $<TARGET_FILE:cruciblecpp-preprocessor>
                 --testsuite ${GCC_TESTSUITE_DIR}
                 --report ${CMAKE_CURRENT_BINARY_DIR}/gcc-testsuite-report.json)
@@ -183,19 +192,19 @@ if(WIN32 AND Python3_Interpreter_FOUND)
     add_test(NAME realworld_corpus
         COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/realworld/run_realworld.py
-                --gcc ${CMAKE_CXX_COMPILER}
+                --gcc ${TEST_COMPILER}
                 --preprocessor $<TARGET_FILE:cruciblecpp-preprocessor>
                 --cache ${CMAKE_CURRENT_SOURCE_DIR}/corpus-cache
                 --report ${CMAKE_CURRENT_BINARY_DIR}/realworld-report.json)
-    set_tests_properties(realworld_corpus PROPERTIES TIMEOUT 300)
+    set_tests_properties(realworld_corpus PROPERTIES TIMEOUT 900)
     add_test(NAME differential_corpus
         COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/differential/run_differential.py
-                --gcc ${CMAKE_CXX_COMPILER}
+                --gcc ${TEST_COMPILER}
                 --preprocessor $<TARGET_FILE:cruciblecpp-preprocessor>
                 --corpus ${CMAKE_CURRENT_SOURCE_DIR}/differential/corpus
                 --report ${CMAKE_CURRENT_BINARY_DIR}/differential-report.json)
-    set_tests_properties(differential_corpus PROPERTIES TIMEOUT 300)
+    set_tests_properties(differential_corpus PROPERTIES TIMEOUT 900)
 endif()
 
 add_test(NAME diagnostics

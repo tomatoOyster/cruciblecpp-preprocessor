@@ -11,7 +11,10 @@
 #error <vector> should be found through the explicit -isystem paths
 #endif
 
-static_assert(__GNUC__ == 15, "GCC 15.2 profile");
+#ifndef TEST_GCC_VERSION
+#define TEST_GCC_VERSION 15
+#endif
+static_assert(__GNUC__ == TEST_GCC_VERSION, "selected GCC profile");
 static_assert(std::is_same_v<std::size_t, decltype(sizeof(0))>, "size_t");
 static_assert(std::is_same_v<std::vector<int>::value_type, int>, "vector");
 

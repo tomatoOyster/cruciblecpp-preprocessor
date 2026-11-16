@@ -4,17 +4,21 @@
 #if !__has_builtin(__is_abstract)
 #error __is_abstract missing
 #endif
+#if __GNUC__ >= 14
 #if !__has_builtin(__is_scoped_enum)
 #error __is_scoped_enum missing
+#endif
 #endif
 #if !__has_builtin(__builtin_acos)
 #error __builtin_acos missing
 #endif
+#if __GNUC__ >= 15
 #if __has_builtin(__builtin_operator_new) != 201802
 #error __builtin_operator_new version
 #endif
 #if __has_builtin(__builtin_operator_delete) != 201802
 #error __builtin_operator_delete version
+#endif
 #endif
 #if !__has_attribute(no_sanitize_thread)
 #error no_sanitize_thread missing
@@ -28,11 +32,13 @@
 #if __has_cpp_attribute(nodiscard) < 201907
 #error nodiscard value too small
 #endif
+#if __GNUC__ >= 14
 #if !__has_feature(cxx_rvalue_references)
 #error cxx_rvalue_references feature missing
 #endif
 #if !__has_extension(cxx_rvalue_references)
 #error cxx_rvalue_references extension missing
+#endif
 #endif
 
 int main() {
