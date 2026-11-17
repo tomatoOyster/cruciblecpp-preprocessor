@@ -1,5 +1,20 @@
 # CrucibleCpp Preprocessor
 
+<p align="center">
+  <a href="https://github.com/tomatoOyster/cruciblecpp-preprocessor/releases/tag/v3.0.1"><img alt="Release v3.0.1" src="https://img.shields.io/github/v/release/tomatoOyster/cruciblecpp-preprocessor?color=087f78&amp;label=release"></a>
+  <a href="LICENSE"><img alt="License: CC BY-NC 4.0" src="https://img.shields.io/badge/license-CC%20BY--NC%204.0-087f78.svg"></a>
+  <a href="LICENSE-MIT"><img alt="Legacy license: MIT" src="https://img.shields.io/badge/legacy%20license-MIT-087f78.svg"></a>
+  <a href="https://hfsdr.cn"><img alt="Website hfsdr.cn" src="https://img.shields.io/badge/website-hfsdr.cn-087f78.svg"></a>
+  <a href="https://github.com/tomatoOyster/cruciblecpp-vscode"><img alt="VS Code extension" src="https://img.shields.io/badge/VS%20Code-extension-087f78.svg"></a>
+</p>
+
+<p align="center">
+  <img alt="Windows x64" src="https://img.shields.io/badge/platform-Windows%20x64-073b3a.svg">
+  <img alt="GCC 13 / 14 / 15" src="https://img.shields.io/badge/GCC-13%20%7C%2014%20%7C%2015-073b3a.svg">
+  <img alt="C++20" src="https://img.shields.io/badge/C%2B%2B-20-073b3a.svg">
+  <img alt="No runtime dependencies" src="https://img.shields.io/badge/dependencies-0-073b3a.svg">
+</p>
+
 > **V3.0.1** — Windows x64 独立 C++ 预处理器，自动发现 PATH 中的 GCC 头文件目录，直接替代 `g++ -E` 的预处理步骤。
 >
 > [下载 V3.0.1](https://github.com/tomatoOyster/cruciblecpp-preprocessor/releases/tag/v3.0.1) · [Changelog](CHANGELOG.md) · [License](LICENSE)
@@ -11,6 +26,23 @@
 > **Windows x64 + MinGW-w64 UCRT64 + GCC 15.2.0 + GCC 13/14/15 的 C++11 / C++14 / C++17 / C++20**
 
 它读取一个源文件，完成翻译阶段 1–4（文件读取、续行、预处理 token 化、预处理指令与宏展开），输出可交给该 GCC 继续编译的 `.i` 文本。
+
+## 目录
+
+- [官方 VS Code 插件](#官方-vs-code-插件)
+- [预编译头（PCH）](#预编译头pch)
+- [功能](#功能)
+- [目录结构](#目录结构)
+- [构建](#构建)
+- [使用](#使用)
+- [CMake 依赖图集成](#cmake-依赖图集成)
+- [设计说明](#设计说明)
+- [测试](#测试)
+- [已知限制](#已知限制)
+- [许可证](#许可证)
+- [示例](#示例)
+
+---
 
 ## 官方 VS Code 插件
 
