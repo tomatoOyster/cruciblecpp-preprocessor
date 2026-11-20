@@ -668,6 +668,16 @@ python tests\\realworld\\run_realworld.py `
 
 CC BY-NC 4.0 允许署名、非商业性的共享和改编；商业使用需要单独授权。发行说明见 [CHANGELOG.md](CHANGELOG.md)。
 
+## 联系开发者
+
+QQ邮箱:**3482490231@qq.com**
+
+outlook邮箱:**yywxdm@outlook.com**
+
+个人网站:[hfhf.top](https://hfhf.top)
+
+TG:[t.me/hfswcq](t.me/hfswcq)
+
 ## 示例
 
 ```powershell
