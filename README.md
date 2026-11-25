@@ -54,6 +54,8 @@
 
 从 **V3.1.0** 起，Windows GUI 作为正式组件发布，不再是预览功能。它和 CLI 共用同一个 `cpp_preproc` 核心，不需要安装 Qt、WebView2、Electron、Dear ImGui、Scintilla 或 JSON 库。
 
+![CrucibleCpp Windows GUI](docs/gui-main.png)
+
 ```text
 cruciblecpp-preprocessor.exe   命令行版本
 cruciblecpp-gui.exe            原生 Win32 GUI
