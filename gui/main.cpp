@@ -451,9 +451,16 @@ struct AppState {
         // larger than the real window. Clamp so every control stays visible.
         if (width > physicalWidth) width = physicalWidth;
         if (height > physicalHeight) height = physicalHeight;
-        // The GUI is DPI-unaware on some systems (Windows virtualizes the
-        // client size). Lay out in 96-DPI units so children fit the real
-        // window at 125%/150%/200% scaling.
+        // Some DPI-virtualized MinGW builds report a logical client rectangle
+        // larger than the real window. Clamp to the actual outer window so the
+        // output panes never extend below the visible frame.
+        RECT frame{};
+        if (GetWindowRect(window, &frame)) {
+            const int frameWidth = frame.right - frame.left;
+            const int frameHeight = frame.bottom - frame.top;
+            if (frameWidth > 0) width = std::min(width, frameWidth - 2);
+            if (frameHeight > 0) height = std::min(height, frameHeight - 2);
+        }
         const UINT dpi = GetDpiForWindow(window);
         if (dpi > 96) {
             width = MulDiv(width, 96, static_cast<int>(dpi));
@@ -495,20 +502,24 @@ struct AppState {
         MoveWindow(options, editX + 438, y, 56, 29, TRUE);
         MoveWindow(copyCli, editX + 500, y, 96, 29, TRUE);
         formRect = {margin - 8, top - 12, width - margin + 8, top + row * 4 + 12};
-        y = top + row * 4 + 30;
+        y = top + row * 4 + 24;
         outputLabelRect = {margin, y, width - margin, y + 20};
         ShowWindow(outputLabel, SW_HIDE);
         y += 22;
-        const int available = std::max(120, height - y - 48);
-        const int outputH = std::max(90, available * 62 / 100);
-        const int diagH = std::max(70, available - outputH - 34);
+        const int statusTop = height - 28;
+        const int contentBottom = std::max(y + 80, statusTop - 8);
+        const int available = std::max(80, contentBottom - y);
+        const int outputH = std::max(80, available * 62 / 100);
+        const int diagTop = y + outputH + 8;
+        const int diagViewTop = diagTop + 22;
+        const int diagH = std::max(50, contentBottom - diagViewTop);
         MoveWindow(outputView, margin, y, width - 2 * margin, outputH, TRUE);
-        y += outputH + 8;
-        resultRect = {margin - 8, y - 2, width - margin + 8, y + diagH + 18};
-        diagLabelRect = {margin, y, width - margin, y + 20};
+        resultRect = {margin - 8, diagTop - 2, width - margin + 8,
+                      diagViewTop + diagH + 6};
+        diagLabelRect = {margin, diagTop, width - margin, diagTop + 20};
         ShowWindow(diagLabel, SW_HIDE);
-        MoveWindow(diagView, margin, y + 22, width - 2 * margin, diagH, TRUE);
-        MoveWindow(status, margin, height - 28, width - 2 * margin, 18, TRUE);
+        MoveWindow(diagView, margin, diagViewTop, width - 2 * margin, diagH, TRUE);
+        MoveWindow(status, margin, statusTop, width - 2 * margin, 18, TRUE);
     }
 
     std::wstring textOf(HWND control) {
@@ -1454,8 +1465,17 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
 } // namespace
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
-    // Avoid DPI virtualization so layout uses real client pixels. The manifest
-    // requests PerMonitorV2; this fallback also works with older MinGW headers.
+    // Prefer per-monitor v2; otherwise Windows virtualizes GetClientRect on
+    // high-DPI displays and the layout no longer matches the real window.
+    HMODULE user32 = GetModuleHandleW(L"user32.dll");
+    if (user32) {
+        using SetContextFn = BOOL(WINAPI*)(HANDLE);
+        auto setContext = reinterpret_cast<SetContextFn>(
+            GetProcAddress(user32, "SetProcessDpiAwarenessContext"));
+        if (setContext) {
+            setContext(reinterpret_cast<HANDLE>(static_cast<INT_PTR>(-4)));
+        }
+    }
     SetProcessDPIAware();
 
     INITCOMMONCONTROLSEX controls{};
