@@ -4,6 +4,8 @@ Windows x64 standalone C++ preprocessor for GCC 13.3 / 14.3 / 15.2.
 
 GUI 从 V3.1.0 起作为正式组件发布，和 CLI 共用同一套核心。
 
+![CrucibleCpp Windows GUI](https://raw.githubusercontent.com/tomatoOyster/cruciblecpp-preprocessor/main/docs/gui-main.png)
+
 ## Windows GUI（正式版）
 
 - 原生 Win32 GUI，和 CLI 共用 `cpp_preproc`，不依赖 Qt / WebView2 / Electron / Dear ImGui。
@@ -44,7 +46,7 @@ V3.0.0 及以后为 CC BY-NC 4.0；V2.9.0 及以前为 MIT，见 `LICENSE` / `LI
 
 ```text
 138ea2c3a390f2c7148d335f5d9056a5f47dfe72bc134d8a2a3bcdeb1d61290b  cruciblecpp-preprocessor.exe
-30501655719d7744c127fd2e0ae959a17fca8d13bbf3f954180bedcc3b074bca  cruciblecpp-preprocessor-v3.1.0-win64.zip
+097d71f02dc096c89b6a6f2a99e3effa2d0bdc7ff2dc4f2085829103745a20f2  cruciblecpp-preprocessor-v3.1.0-win64.zip
 e953676a210dd9202d63a5e5779717eada27513a3079130507cf391d2e7b55d9  cruciblecpp-gui.exe
-8ac5e4b322a1435b5d534b102d086e56a8fa84f1f262a8b1b93f2c8edd9cff73  cruciblecpp-preprocessor-v3.1.0-win64-gui.zip
+3e1d13c62625bb2f09f42213d531d9da2b96967acfd01a7780bf24c78ee6f2f1  cruciblecpp-preprocessor-v3.1.0-win64-gui.zip
 ```
