@@ -1,11 +1,11 @@
-# CrucibleCpp v3.1.0
+# CrucibleCpp Preprocessor V3.1.0
 
-Windows x64 独立 C++20 预处理器，本轮加入原生 Windows GUI Preview。
+Windows x64 standalone C++ preprocessor for GCC 13.3 / 14.3 / 15.2.
 
-## 新增
+## Windows GUI（Preview）
 
-- 原生 Win32 GUI，同 CLI 共用 `cpp_preproc`，不依赖 Qt / WebView2 / Electron / Dear ImGui。
-- 源文件和输出 `.i` 路径必须显式选择；空路径点击“预处理”会提示“请先选择目录”。
+- 原生 Win32 GUI，和 CLI 共用 `cpp_preproc`，不依赖 Qt / WebView2 / Electron / Dear ImGui。
+- 源文件和输出 `.i` 路径必须显式选择；空路径点击“预处理”提示“请先选择目录”。
 - GCC 自动检测、C++11/14/17/20、工作线程预处理、取消。
 - Include 目录、宏定义、PCH 策略、行标记、保留注释选项。
 - 与 `g++ -E` 对比：忽略行标记和空行，差异显示在诊断区。
@@ -19,16 +19,30 @@ Windows x64 独立 C++20 预处理器，本轮加入原生 Windows GUI Preview�
 - C++ 标准下拉框和“预处理”按钮重叠。
 - 高 DPI 下信息区没有铺满窗口。
 
-## 说明
+## 验证
 
-- GUI 为 Preview，CLI 保持独立且稳定。
-- 版本：`3.1.0`。
-- 许可证：V3.0.0+ 为 CC BY-NC 4.0；V2.9.0- 为 MIT。
-- 仅支持 GCC（13/14/15），不支持 Clang/MSVC。
+- CLI `--version`：`cruciblecpp-preprocessor 3.1.0`。
+- CLI 实际预处理、生成 `.i`、GCC 编译通过。
+- GUI 实际完成预处理并生成 `.i`。
+- GUI 与 CLI 共用同一核心。
+
+## 许可证
+
+V3.0.0 及以后为 CC BY-NC 4.0；V2.9.0 及以前为 MIT，见 `LICENSE` / `LICENSE-MIT`。
 
 ## 资产
 
-- `cruciblecpp-3.1.0-win64-cli.zip`
-- `cruciblecpp-3.1.0-win64-gui.zip`
+- `cruciblecpp-preprocessor.exe`
+- `cruciblecpp-preprocessor-v3.1.0-win64.zip`
+- `cruciblecpp-gui.exe`
+- `cruciblecpp-preprocessor-v3.1.0-win64-gui.zip`
 - `SHA256SUMS.txt`
 
+## SHA-256
+
+```text
+138ea2c3a390f2c7148d335f5d9056a5f47dfe72bc134d8a2a3bcdeb1d61290b  cruciblecpp-preprocessor.exe
+30501655719d7744c127fd2e0ae959a17fca8d13bbf3f954180bedcc3b074bca  cruciblecpp-preprocessor-v3.1.0-win64.zip
+e953676a210dd9202d63a5e5779717eada27513a3079130507cf391d2e7b55d9  cruciblecpp-gui.exe
+8ac5e4b322a1435b5d534b102d086e56a8fa84f1f262a8b1b93f2c8edd9cff73  cruciblecpp-preprocessor-v3.1.0-win64-gui.zip
+```
