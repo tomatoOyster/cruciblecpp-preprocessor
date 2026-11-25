@@ -567,12 +567,6 @@ struct AppState {
         if (!GetOpenFileNameW(&dialog)) return;
         selectedInput = file;
         setText(input, file);
-        if (textOf(output).empty()) {
-            std::filesystem::path path(file);
-            path.replace_extension(L".i");
-            selectedOutput = path.wstring();
-            setText(output, path.wstring());
-        }
     }
 
     void browseOutputFile() {
@@ -636,8 +630,10 @@ struct AppState {
     }
 
     void loadSettings() {
-        selectedInput = getIni(L"input");
-        selectedOutput = getIni(L"output");
+        // Source and output start empty by design; the user must choose them
+        // explicitly for every new session.
+        selectedInput.clear();
+        selectedOutput.clear();
         selectedGcc = getIni(L"gcc");
         setText(input, selectedInput);
         setText(output, selectedOutput);
@@ -909,14 +905,10 @@ struct AppState {
     void startRun() {
         if (running) return;
         const std::wstring inputPath = selectedInput.empty() ? textOf(input) : selectedInput;
-        if (inputPath.empty()) {
-            MessageBoxW(window, L"请先选择源文件。", L"CrucibleCpp GUI", MB_ICONWARNING);
+        const std::wstring outputPath = selectedOutput.empty() ? textOf(output) : selectedOutput;
+        if (inputPath.empty() || outputPath.empty()) {
+            MessageBoxW(window, L"请先选择目录", L"CrucibleCpp GUI", MB_ICONWARNING);
             return;
-        }
-        if (selectedOutput.empty() && textOf(output).empty()) {
-            std::filesystem::path path(inputPath);
-            path.replace_extension(L".i");
-            setText(output, path.wstring());
         }
         cancelRequested.store(false);
         setRunning(true);
@@ -925,7 +917,6 @@ struct AppState {
         setText(outputView, L"");
         setText(diagView, L"");
         std::wstring gccPath = selectedGcc.empty() ? textOf(gcc) : selectedGcc;
-        std::wstring outputPath = selectedOutput.empty() ? textOf(output) : selectedOutput;
         std::string standard = selectedStandard();
         worker = std::thread([this, inputPath, outputPath, gccPath, standard]() {
             crucible::GccDiscovery discovery;
@@ -1203,12 +1194,6 @@ struct AppState {
             if (DragQueryFileW(drop, 0, file, static_cast<UINT>(std::size(file))) > 0) {
                 selectedInput = file;
                 setText(input, selectedInput);
-                if (selectedOutput.empty()) {
-                    std::filesystem::path path(file);
-                    path.replace_extension(L".i");
-                    selectedOutput = path.wstring();
-                    setText(output, selectedOutput);
-                }
             }
             DragFinish(drop);
             return 0;
