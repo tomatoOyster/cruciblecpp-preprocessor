@@ -465,11 +465,6 @@ struct AppState {
             if (frameWidth > 0) width = std::min(width, frameWidth - 2);
             if (frameHeight > 0) height = std::min(height, frameHeight - 2);
         }
-        const UINT dpi = GetDpiForWindow(window);
-        if (dpi > 96) {
-            width = MulDiv(width, 96, static_cast<int>(dpi));
-            height = MulDiv(height, 96, static_cast<int>(dpi));
-        }
         layout(width, height);
     }
 
