@@ -1658,6 +1658,10 @@ void AppState::showOptions() {
 struct AgreementState {
     AppState* app = nullptr;
     HWND window = nullptr;
+    HWND title = nullptr;
+    HWND edit = nullptr;
+    HWND note = nullptr;
+    HWND ok = nullptr;
     bool accepted = false;
 };
 
@@ -1677,28 +1681,53 @@ LRESULT CALLBACK AgreementProc(HWND window, UINT message, WPARAM wParam, LPARAM 
     case WM_CREATE: {
         const DWORD labelStyle = WS_CHILD | WS_VISIBLE | SS_LEFT;
         const DWORD editStyle = WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL |
-                                ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL;
-        HWND title = CreateWindowExW(0, L"STATIC", L"CrucibleCpp 用户协议",
-                                     labelStyle, 20, 16, 700, 28, window, nullptr,
-                                     state->app->instance, nullptr);
-        HWND edit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", kAgreementText,
-                                    editStyle, 20, 52, 720, 460, window,
-                                    reinterpret_cast<HMENU>(1001), state->app->instance,
+                                ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL |
+                                ES_NOHIDESEL;
+        state->title = CreateWindowExW(0, L"STATIC", L"CrucibleCpp 用户协议",
+                                       labelStyle, 20, 16, 700, 44, window, nullptr,
+                                       state->app->instance, nullptr);
+        state->edit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT",
+                                      editMultiline(kAgreementText).c_str(),
+                                      editStyle, 20, 72, 720, 430, window,
+                                      reinterpret_cast<HMENU>(1001), state->app->instance,
+                                      nullptr);
+        state->note = CreateWindowExW(0, L"STATIC",
+                                      L"点击“确定”后继续使用；关闭窗口将退出。",
+                                      labelStyle, 20, 524, 540, 24, window, nullptr,
+                                      state->app->instance, nullptr);
+        state->ok = CreateWindowExW(0, L"BUTTON", L"确定",
+                                    WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+                                    620, 516, 120, 32, window,
+                                    reinterpret_cast<HMENU>(IDOK), state->app->instance,
                                     nullptr);
-        HWND note = CreateWindowExW(0, L"STATIC",
-                                    L"点击“确定”后继续使用；关闭窗口将退出。",
-                                    labelStyle, 20, 524, 540, 22, window, nullptr,
-                                    state->app->instance, nullptr);
-        HWND ok = CreateWindowExW(0, L"BUTTON", L"确定",
-                                  WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-                                  620, 520, 120, 30, window,
-                                  reinterpret_cast<HMENU>(IDOK), state->app->instance,
-                                  nullptr);
-        SendMessageW(title, WM_SETFONT, reinterpret_cast<WPARAM>(state->app->titleFont), TRUE);
-        SendMessageW(edit, WM_SETFONT, reinterpret_cast<WPARAM>(state->app->uiFont), TRUE);
-        SendMessageW(note, WM_SETFONT, reinterpret_cast<WPARAM>(state->app->uiFont), TRUE);
-        SendMessageW(ok, WM_SETFONT, reinterpret_cast<WPARAM>(state->app->uiFont), TRUE);
-        SetFocus(edit);
+        SendMessageW(state->title, WM_SETFONT,
+                     reinterpret_cast<WPARAM>(state->app->titleFont), TRUE);
+        SendMessageW(state->edit, WM_SETFONT,
+                     reinterpret_cast<WPARAM>(state->app->uiFont), TRUE);
+        SendMessageW(state->note, WM_SETFONT,
+                     reinterpret_cast<WPARAM>(state->app->uiFont), TRUE);
+        SendMessageW(state->ok, WM_SETFONT,
+                     reinterpret_cast<WPARAM>(state->app->uiFont), TRUE);
+        RECT client{};
+        GetClientRect(window, &client);
+        SendMessageW(window, WM_SIZE, 0,
+                     MAKELPARAM(client.right - client.left, client.bottom - client.top));
+        SetFocus(state->edit);
+        return 0;
+    }
+    case WM_SIZE: {
+        if (!state->title) return 0;
+        const int width = LOWORD(lParam);
+        const int height = HIWORD(lParam);
+        if (width <= 0 || height <= 0) return 0;
+        MoveWindow(state->title, 24, 16, width - 48, 44, TRUE);
+        const int noteHeight = 24;
+        const int buttonTop = height - 54;
+        MoveWindow(state->note, 24, buttonTop, std::max(100, width - 190),
+                   noteHeight, TRUE);
+        MoveWindow(state->ok, width - 152, buttonTop - 4, 128, 34, TRUE);
+        MoveWindow(state->edit, 24, 70, width - 48,
+                   std::max(80, buttonTop - 86), TRUE);
         return 0;
     }
     case WM_COMMAND:
@@ -1740,8 +1769,8 @@ bool showAgreementDialog(AppState* app) {
     state.app = app;
     RECT parent{};
     GetWindowRect(app->window, &parent);
-    const int width = 780;
-    const int height = 610;
+    const int width = 820;
+    const int height = 650;
     EnableWindow(app->window, FALSE);
     HWND dialog = CreateWindowExW(
         WS_EX_DLGMODALFRAME, L"CrucibleCppAgreementWindow",
