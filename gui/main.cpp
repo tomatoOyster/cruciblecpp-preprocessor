@@ -22,6 +22,7 @@ namespace {
 
 constexpr wchar_t kWindowClass[] = L"CrucibleCppGuiWindow";
 constexpr UINT kRunDoneMessage = WM_APP + 1;
+constexpr UINT kLayoutMessage = WM_APP + 2;
 constexpr int kMaxDisplayBytes = 8 * 1024 * 1024;
 
 constexpr COLORREF kBackground = RGB(244, 251, 249);
@@ -302,11 +303,6 @@ struct AppState {
         // larger than the real window. Clamp so every control stays visible.
         if (width > physicalWidth) width = physicalWidth;
         if (height > physicalHeight) height = physicalHeight;
-        const UINT dpi = GetDpiForWindow(window);
-        if (dpi > 96) {
-            width = MulDiv(width, 96, static_cast<int>(dpi));
-            height = MulDiv(height, 96, static_cast<int>(dpi));
-        }
         layout(width, height);
     }
 
@@ -819,6 +815,9 @@ struct AppState {
             layoutForWindow();
             return 0;
         case WM_SIZE:
+            PostMessageW(window, kLayoutMessage, 0, 0);
+            return 0;
+        case kLayoutMessage:
             layoutForWindow();
             InvalidateRect(window, nullptr, TRUE);
             return 0;
