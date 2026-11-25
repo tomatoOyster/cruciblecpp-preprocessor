@@ -739,6 +739,8 @@ void DiagnosticSink::report(Severity severity, const SourceLocation& loc,
         }
     }
 
+    records_.push_back(Diagnostic{severity, loc, message});
+
     printIncludeTrace(includeStack_, loc);
 
     if (!loc.presumedFile.empty()) {

@@ -30,6 +30,7 @@
 ## 目录
 
 - [官方 VS Code 插件](#官方-vs-code-插件)
+- [Windows GUI（预览）](#windows-gui预览)
 - [预编译头（PCH）](#预编译头pch)
 - [功能](#功能)
 - [目录结构](#目录结构)
@@ -57,6 +58,39 @@
 - 插件需要本仓库构建的 `cruciblecpp-preprocessor.exe`；如果不在工作区 `build`/`bin` 中，在 VS Code 设置里配置 `cruciblecpp.executable`。
 - 宏动画和 include 图需要 CrucibleCpp **2.2.0** 或更新版本；PCH 策略设置需要 **2.3.0** 或更新版本。
 
+## Windows GUI（预览）
+
+仓库包含一个原生 Windows GUI 预览版，和 CLI 共用同一个 `cpp_preproc` 核心：
+
+```text
+cruciblecpp-preprocessor.exe   命令行版本
+cruciblecpp-gui.exe            Windows GUI 版本
+```
+
+GUI 只使用 Windows SDK 和 C++ 标准库，不引入 Qt、WebView2、Electron、Dear ImGui 或 JSON 库。
+
+当前功能：
+
+- 选择源文件和输出 `.i`
+- 自动检测 PATH 中的 GCC，或手动指定 `g++.exe`
+- 选择 C++11 / C++14 / C++17 / C++20
+- 在工作线程中执行预处理
+- 查看 `.i` 输出
+- 查看结构化诊断
+- 命令行启动参数：
+
+```powershell
+cruciblecpp-gui.exe --input src\main.cpp --output build\main.i --run
+```
+
+构建：
+
+```powershell
+cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
+cmake --build build --target cruciblecpp-gui
+```
+
+GUI 是 Windows 专用目标；CLI 仍保持独立。
 ## 预编译头（PCH）
 
 GCC 的 `g++ -E` **不会使用** `.gch`；PCH 只在真正编译时使用。因此本预处理器对 PCH 的语义是：

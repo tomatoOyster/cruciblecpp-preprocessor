@@ -73,6 +73,7 @@ public:
     bool fatal() const { return fatal_; }
     bool limitReached() const { return limitReached_; }
     int errorCount() const { return errorCount_; }
+    const std::vector<Diagnostic>& records() const { return records_; }
 
 private:
     int maxErrors_ = 20;
@@ -88,6 +89,7 @@ private:
     std::vector<IncludeFrame> includeStack_;
     std::unordered_map<std::string, Severity> diagnosticState_;
     std::vector<std::unordered_map<std::string, Severity>> diagnosticStack_;
+    std::vector<Diagnostic> records_;
 };
 
 struct CommandLineAction {
@@ -163,6 +165,10 @@ public:
     Preprocessor& operator=(const Preprocessor&) = delete;
 
     int run();
+
+    // Structured diagnostics for GUI/front-end consumers. The CLI still
+    // renders the same records to stderr.
+    const DiagnosticSink& diagnostics() const { return diagnostics_; }
 
 private:
     bool applyCommandLine();
