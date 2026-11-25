@@ -1209,7 +1209,15 @@ bool Preprocessor::applyCommandLine() {
     return !diagnostics_.hasError();
 }
 
+bool Preprocessor::cancelled() const {
+    return options_.cancelRequested && options_.cancelRequested->load();
+}
+
 int Preprocessor::run() {
+    if (options_.cancelRequested && options_.cancelRequested->load()) {
+        diagnostics_.error({}, "cancelled");
+        return 130;
+    }
     if (options_.input.empty()) {
         diagnostics_.error({}, "no input file");
         return 2;
@@ -1228,9 +1236,11 @@ int Preprocessor::run() {
     }
 
     applyCommandLine();
+    if (cancelled()) return 130;
     if (!diagnostics_.limitReached()) {
         processFile(options_.input, false);
     }
+    if (cancelled()) return 130;
     warnUnusedMacros();
 
     writer_->ensureNewline();
@@ -1257,6 +1267,9 @@ bool Preprocessor::processFile(const std::filesystem::path& path,
                                std::uint32_t includedFromLine,
                                bool systemHeader) {
     (void)angledInclude;
+    if (cancelled()) {
+        return false;
+    }
     if (diagnostics_.limitReached() || diagnostics_.fatal()) {
         return false;
     }

@@ -74,9 +74,12 @@ GUI 只使用 Windows SDK 和 C++ 标准库，不引入 Qt、WebView2、Electron
 - 选择源文件和输出 `.i`
 - 自动检测 PATH 中的 GCC，或手动指定 `g++.exe`
 - 选择 C++11 / C++14 / C++17 / C++20
-- 在工作线程中执行预处理
-- 查看 `.i` 输出
-- 查看结构化诊断
+- 在工作线程中执行预处理，可取消
+- 查看 `.i` 输出和结构化诊断
+- 选项对话框：Include 目录、宏定义、PCH 策略、行标记、保留注释
+- 复制等价的 CLI 命令
+- 拖放源文件到窗口
+- 记住上次使用的路径和选项
 - 命令行启动参数：
 
 ```powershell
@@ -719,3 +722,4 @@ TG:[t.me/hfswcq](t.me/hfswcq)
 g++ -std=c++20 output\advanced_macro.i -o output\advanced_macro.exe
 .\output\advanced_macro.exe
 ```
+

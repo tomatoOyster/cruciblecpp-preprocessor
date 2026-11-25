@@ -4,6 +4,7 @@
 #include "PchCache.h"
 #include "Token.h"
 
+#include <atomic>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -154,6 +155,9 @@ struct PreprocessorOptions {
 
     // Optional JSON analysis output for GUI/front-end tooling.
     std::filesystem::path analysisFile;
+
+    // Cooperative cancellation for GUI/editor front-ends.
+    std::atomic_bool* cancelRequested = nullptr;
 };
 
 class Preprocessor {
@@ -165,6 +169,8 @@ public:
     Preprocessor& operator=(const Preprocessor&) = delete;
 
     int run();
+
+    bool cancelled() const;
 
     // Structured diagnostics for GUI/front-end consumers. The CLI still
     // renders the same records to stderr.
