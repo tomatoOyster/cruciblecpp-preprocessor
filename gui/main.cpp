@@ -4,6 +4,7 @@
 #include <windows.h>
 #include <commctrl.h>
 #include <commdlg.h>
+#include <dwmapi.h>
 #include <shellapi.h>
 
 #include <algorithm>
@@ -23,6 +24,16 @@ constexpr wchar_t kWindowClass[] = L"CrucibleCppGuiWindow";
 constexpr UINT kRunDoneMessage = WM_APP + 1;
 constexpr int kMaxDisplayBytes = 8 * 1024 * 1024;
 
+constexpr COLORREF kBackground = RGB(244, 251, 249);
+constexpr COLORREF kPanel = RGB(255, 255, 255);
+constexpr COLORREF kHeader = RGB(7, 59, 58);
+constexpr COLORREF kAccent = RGB(8, 127, 120);
+constexpr COLORREF kAccentSoft = RGB(224, 247, 243);
+constexpr COLORREF kText = RGB(7, 59, 58);
+constexpr COLORREF kMuted = RGB(76, 112, 109);
+constexpr COLORREF kBorder = RGB(204, 226, 222);
+constexpr COLORREF kDanger = RGB(176, 58, 58);
+
 enum ControlId : int {
     IDC_INPUT = 100,
     IDC_BROWSE_INPUT,
@@ -40,6 +51,8 @@ enum ControlId : int {
     IDC_STATIC_OUTPUT,
     IDC_STATIC_GCC,
     IDC_STATIC_STANDARD,
+    IDC_OUTPUT_LABEL,
+    IDC_DIAG_LABEL,
     IDC_CANCEL,
     IDC_OPTIONS,
     IDC_COPY_CLI,
@@ -73,6 +86,19 @@ std::string wideToUtf8(const std::wstring& text) {
     std::string result(static_cast<std::size_t>(size), '\0');
     WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()),
                         result.data(), size, nullptr, nullptr);
+    return result;
+}
+
+std::wstring editMultiline(std::wstring text) {
+    std::wstring result;
+    result.reserve(text.size() + text.size() / 16);
+    for (std::size_t i = 0; i < text.size(); ++i) {
+        if (text[i] == L'\n' && (i == 0 || text[i - 1] != L'\r')) {
+            result += L"\r\n";
+        } else {
+            result.push_back(text[i]);
+        }
+    }
     return result;
 }
 
@@ -139,8 +165,18 @@ struct AppState {
     HWND diagView = nullptr;
     HWND status = nullptr;
     HWND labels[4]{};
+    HWND outputLabel = nullptr;
+    HWND diagLabel = nullptr;
     HFONT uiFont = nullptr;
+    HFONT titleFont = nullptr;
+    HFONT subtitleFont = nullptr;
     HFONT codeFont = nullptr;
+    HBRUSH backgroundBrush = nullptr;
+    HBRUSH panelBrush = nullptr;
+    RECT formRect{};
+    RECT resultRect{};
+    RECT outputLabelRect{};
+    RECT diagLabelRect{};
     std::thread worker;
     std::atomic_bool cancelRequested{false};
     std::wstring selectedInput;
@@ -159,7 +195,7 @@ struct AppState {
 
     void createControls() {
         const DWORD editStyle = WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL;
-        const DWORD buttonStyle = WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON;
+        const DWORD buttonStyle = WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW;
         const wchar_t* labelText[] = {L"源文件", L"输出 .i", L"目标 GCC", L"标准"};
         for (int i = 0; i < 4; ++i) {
             labels[i] = CreateWindowExW(0, L"STATIC", labelText[i],
@@ -222,6 +258,17 @@ struct AppState {
                                        ES_AUTOVSCROLL | ES_AUTOHSCROLL,
                                    0, 0, 10, 10, window,
                                    reinterpret_cast<HMENU>(IDC_DIAG_VIEW), instance, nullptr);
+        outputLabel = CreateWindowExW(0, L"STATIC", L"输出 .i",
+                                     WS_CHILD | WS_VISIBLE | SS_LEFT,
+                                     0, 0, 10, 10, window,
+                                     reinterpret_cast<HMENU>(IDC_OUTPUT_LABEL), instance, nullptr);
+        diagLabel = CreateWindowExW(0, L"STATIC", L"诊断",
+                                   WS_CHILD | WS_VISIBLE | SS_LEFT,
+                                   0, 0, 10, 10, window,
+                                   reinterpret_cast<HMENU>(IDC_DIAG_LABEL), instance, nullptr);
+        for (HWND label : {outputLabel, diagLabel}) {
+            SendMessageW(label, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont), TRUE);
+        }
         status = CreateWindowExW(0, L"STATIC", L"准备就绪",
                                  WS_CHILD | WS_VISIBLE | SS_LEFT,
                                  0, 0, 10, 10, window,
@@ -262,40 +309,50 @@ struct AppState {
     }
 
     void layout(int width, int height) {
-        const int margin = 14;
-        const int labelWidth = 104;
-        const int buttonWidth = 86;
-        const int row = 32;
+        const int margin = 18;
+        const int top = 92;
+        const int labelWidth = 94;
+        const int buttonWidth = 78;
+        const int row = 34;
         const int editX = margin + labelWidth;
         const int editW = std::max(180, width - editX - margin - buttonWidth - 12);
-        int y = margin;
+        int y = top;
         for (int i = 0; i < 4; ++i) {
-            MoveWindow(labels[i], margin, margin + i * row + 6,
+            MoveWindow(labels[i], margin, top + i * row + 7,
                        labelWidth - 8, 22, TRUE);
         }
-        MoveWindow(input, editX, y, editW, 25, TRUE);
-        MoveWindow(browseInput, editX + editW + 8, y, buttonWidth, 25, TRUE);
+        MoveWindow(input, editX, y, editW, 27, TRUE);
+        MoveWindow(browseInput, editX + editW + 8, y, buttonWidth, 27, TRUE);
         y += row;
-        MoveWindow(output, editX, y, editW, 25, TRUE);
-        MoveWindow(browseOutput, editX + editW + 8, y, buttonWidth, 25, TRUE);
+        MoveWindow(output, editX, y, editW, 27, TRUE);
+        MoveWindow(browseOutput, editX + editW + 8, y, buttonWidth, 27, TRUE);
         y += row;
-        int gccW = std::max(160, editW - buttonWidth - 8);
-        MoveWindow(gcc, editX, y, gccW, 25, TRUE);
-        MoveWindow(browseGcc, editX + gccW + 8, y, buttonWidth, 25, TRUE);
-        MoveWindow(detectGcc, editX + gccW + 8 + buttonWidth + 6, y, buttonWidth + 12, 25, TRUE);
+        int gccW = std::max(150, editW - buttonWidth - 8);
+        MoveWindow(gcc, editX, y, gccW, 27, TRUE);
+        MoveWindow(browseGcc, editX + gccW + 8, y, buttonWidth, 27, TRUE);
+        MoveWindow(detectGcc, editX + gccW + 8 + buttonWidth + 6, y,
+                   buttonWidth + 10, 27, TRUE);
         y += row;
         MoveWindow(standard, editX, y, 130, 200, TRUE);
-        MoveWindow(run, editX + 150, y, 92, 27, TRUE);
-        MoveWindow(cancel, editX + 248, y, 76, 27, TRUE);
-        MoveWindow(options, editX + 332, y, 76, 27, TRUE);
-        MoveWindow(copyCli, editX + 416, y, 112, 27, TRUE);
-        y += 40;
-        const int available = std::max(160, height - y - margin - 22);
-        const int outputH = std::max(100, available * 62 / 100);
-        const int diagH = std::max(80, available - outputH - 8);
+        MoveWindow(run, editX + 150, y, 86, 29, TRUE);
+        MoveWindow(cancel, editX + 240, y, 72, 29, TRUE);
+        MoveWindow(options, editX + 318, y, 72, 29, TRUE);
+        MoveWindow(copyCli, editX + 396, y, 112, 29, TRUE);
+        formRect = {margin - 8, top - 12, width - margin + 8, top + row * 4 + 12};
+        y = top + row * 4 + 30;
+        outputLabelRect = {margin, y, width - margin, y + 20};
+        ShowWindow(outputLabel, SW_HIDE);
+        y += 22;
+        const int available = std::max(120, height - y - 48);
+        const int outputH = std::max(90, available * 62 / 100);
+        const int diagH = std::max(70, available - outputH - 34);
         MoveWindow(outputView, margin, y, width - 2 * margin, outputH, TRUE);
-        MoveWindow(diagView, margin, y + outputH + 8, width - 2 * margin, diagH, TRUE);
-        MoveWindow(status, margin, height - 24, width - 2 * margin, 18, TRUE);
+        y += outputH + 8;
+        resultRect = {margin - 8, y - 2, width - margin + 8, y + diagH + 18};
+        diagLabelRect = {margin, y, width - margin, y + 20};
+        ShowWindow(diagLabel, SW_HIDE);
+        MoveWindow(diagView, margin, y + 22, width - 2 * margin, diagH, TRUE);
+        MoveWindow(status, margin, height - 28, width - 2 * margin, 18, TRUE);
     }
 
     std::wstring textOf(HWND control) {
@@ -634,14 +691,122 @@ struct AppState {
     void finishRun() {
         if (worker.joinable()) worker.join();
         setRunning(false);
-        setText(outputView, utf8ToWide(resultOutput).c_str());
-        setText(diagView, utf8ToWide(resultDiagnostics).c_str());
+        setText(outputView, editMultiline(utf8ToWide(resultOutput)).c_str());
+        setText(diagView, editMultiline(utf8ToWide(resultDiagnostics)).c_str());
         std::wstring statusText = utf8ToWide(resultStatus);
         if (!resultDiagnostics.empty()) {
             statusText += L"（诊断 " + std::to_wstring(
                 std::count(resultDiagnostics.begin(), resultDiagnostics.end(), '\n')) + L" 条）";
         }
         setText(status, statusText);
+    }
+
+    void paint(HDC dc) {
+        RECT client{};
+        GetClientRect(window, &client);
+        FillRect(dc, &client, backgroundBrush);
+
+        RECT header{0, 0, client.right, 76};
+        HBRUSH headerBrush = CreateSolidBrush(kHeader);
+        FillRect(dc, &header, headerBrush);
+        DeleteObject(headerBrush);
+
+        SetBkMode(dc, TRANSPARENT);
+        HBRUSH markBrush = CreateSolidBrush(kAccent);
+        HPEN noPen = CreatePen(PS_NULL, 0, kAccent);
+        HGDIOBJ oldBrush = SelectObject(dc, markBrush);
+        HGDIOBJ oldPen = SelectObject(dc, noPen);
+        RoundRect(dc, 22, 20, 58, 56, 12, 12);
+        SelectObject(dc, oldBrush);
+        SelectObject(dc, oldPen);
+        DeleteObject(noPen);
+        DeleteObject(markBrush);
+        SelectObject(dc, titleFont);
+        SetTextColor(dc, RGB(235, 255, 251));
+        RECT markText{22, 14, 58, 56};
+        DrawTextW(dc, L"C", -1, &markText,
+                  DT_CENTER | DT_SINGLELINE | DT_VCENTER);
+
+        SelectObject(dc, titleFont);
+        SetTextColor(dc, RGB(235, 255, 251));
+        RECT title{70, 14, client.right - 20, 44};
+        DrawTextW(dc, L"CrucibleCpp", -1, &title,
+                  DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
+        SelectObject(dc, subtitleFont);
+        SetTextColor(dc, RGB(143, 211, 201));
+        RECT subtitle{72, 44, client.right - 20, 66};
+        DrawTextW(dc, L"GCC 13 / 14 / 15  ·  Windows x64 preprocessor", -1,
+                  &subtitle, DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
+
+        auto drawPanel = [&](const RECT& rect) {
+            if (rect.right <= rect.left || rect.bottom <= rect.top) return;
+            HBRUSH brush = CreateSolidBrush(kPanel);
+            HPEN pen = CreatePen(PS_SOLID, 1, kBorder);
+            HGDIOBJ oldB = SelectObject(dc, brush);
+            HGDIOBJ oldP = SelectObject(dc, pen);
+            RoundRect(dc, rect.left, rect.top, rect.right, rect.bottom, 14, 14);
+            SelectObject(dc, oldB);
+            SelectObject(dc, oldP);
+            DeleteObject(brush);
+            DeleteObject(pen);
+        };
+        drawPanel(formRect);
+        drawPanel(resultRect);
+
+        SelectObject(dc, uiFont);
+        SetTextColor(dc, kMuted);
+        DrawTextW(dc, L"输出 .i", -1, &outputLabelRect,
+                  DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+        DrawTextW(dc, L"诊断", -1, &diagLabelRect,
+                  DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+    }
+
+    void drawButton(const DRAWITEMSTRUCT* item) {
+        if (!item) return;
+        const int id = static_cast<int>(item->CtlID);
+        const bool primary = id == IDC_RUN;
+        const bool danger = id == IDC_CANCEL;
+        const bool selected = (item->itemState & ODS_SELECTED) != 0;
+        const bool disabled = (item->itemState & ODS_DISABLED) != 0;
+        COLORREF fill = primary ? kAccent : kPanel;
+        COLORREF border = primary ? kAccent : kBorder;
+        COLORREF textColor = primary ? RGB(255, 255, 255) : kText;
+        if (danger) {
+            fill = kPanel;
+            border = RGB(220, 180, 180);
+            textColor = kDanger;
+        }
+        if (selected) {
+            fill = primary ? RGB(6, 104, 98) : kAccentSoft;
+        }
+        if (disabled) {
+            fill = RGB(239, 245, 243);
+            border = RGB(215, 229, 225);
+            textColor = RGB(150, 170, 166);
+        }
+        HBRUSH brush = CreateSolidBrush(fill);
+        HPEN pen = CreatePen(PS_SOLID, 1, border);
+        HGDIOBJ oldB = SelectObject(item->hDC, brush);
+        HGDIOBJ oldP = SelectObject(item->hDC, pen);
+        RoundRect(item->hDC, item->rcItem.left, item->rcItem.top,
+                  item->rcItem.right, item->rcItem.bottom, 9, 9);
+        SelectObject(item->hDC, oldB);
+        SelectObject(item->hDC, oldP);
+        DeleteObject(brush);
+        DeleteObject(pen);
+
+        wchar_t text[128]{};
+        GetWindowTextW(item->hwndItem, text, 128);
+        SetBkMode(item->hDC, TRANSPARENT);
+        SetTextColor(item->hDC, textColor);
+        HFONT font = uiFont;
+        HGDIOBJ oldFont = SelectObject(item->hDC, font);
+        RECT textRect = item->rcItem;
+        textRect.left += 6;
+        textRect.right -= 6;
+        DrawTextW(item->hDC, text, -1, &textRect,
+                  DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
+        SelectObject(item->hDC, oldFont);
     }
 
     LRESULT handle(UINT message, WPARAM wParam, LPARAM lParam) {
@@ -653,7 +818,32 @@ struct AppState {
             return 0;
         case WM_SIZE:
             layoutForWindow();
+            InvalidateRect(window, nullptr, TRUE);
             return 0;
+        case WM_ERASEBKGND:
+            return 1;
+        case WM_PAINT: {
+            PAINTSTRUCT paintStruct{};
+            HDC dc = BeginPaint(window, &paintStruct);
+            paint(dc);
+            EndPaint(window, &paintStruct);
+            return 0;
+        }
+        case WM_CTLCOLORSTATIC: {
+            HDC dc = reinterpret_cast<HDC>(wParam);
+            SetBkMode(dc, TRANSPARENT);
+            SetTextColor(dc, kMuted);
+            return reinterpret_cast<LRESULT>(GetStockObject(NULL_BRUSH));
+        }
+        case WM_CTLCOLOREDIT: {
+            HDC dc = reinterpret_cast<HDC>(wParam);
+            SetTextColor(dc, kText);
+            SetBkColor(dc, kPanel);
+            return reinterpret_cast<LRESULT>(panelBrush);
+        }
+        case WM_DRAWITEM:
+            drawButton(reinterpret_cast<const DRAWITEMSTRUCT*>(lParam));
+            return TRUE;
         case WM_COMMAND:
             switch (LOWORD(wParam)) {
             case IDC_BROWSE_INPUT: browseInputFile(); return 0;
@@ -699,7 +889,12 @@ struct AppState {
             return 0;
         case WM_DESTROY:
             saveSettings();
+            if (uiFont) DeleteObject(uiFont);
+            if (titleFont) DeleteObject(titleFont);
+            if (subtitleFont) DeleteObject(subtitleFont);
             if (codeFont) DeleteObject(codeFont);
+            if (backgroundBrush) DeleteObject(backgroundBrush);
+            if (panelBrush) DeleteObject(panelBrush);
             PostQuitMessage(0);
             return 0;
         }
@@ -771,7 +966,7 @@ LRESULT CALLBACK OptionsProc(HWND window, UINT message, WPARAM wParam, LPARAM lP
         const DWORD labelStyle = WS_CHILD | WS_VISIBLE | SS_LEFT;
         const DWORD editStyle = WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL |
                                 ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN;
-        const DWORD buttonStyle = WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON;
+        const DWORD buttonStyle = WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW;
         auto makeLabel = [&](const wchar_t* text, int x, int y, int w) {
             HWND control = CreateWindowExW(0, L"STATIC", text, labelStyle, x, y, w, 20,
                                            window, nullptr, state->app->instance, nullptr);
@@ -886,7 +1081,7 @@ void showOptionsDialog(AppState* app) {
         windowClass.lpfnWndProc = OptionsProc;
         windowClass.hInstance = app->instance;
         windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-        windowClass.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+        windowClass.hbrBackground = app->backgroundBrush;
         windowClass.lpszClassName = L"CrucibleCppOptionsWindow";
         if (!RegisterClassExW(&windowClass)) return;
         registered = true;
@@ -958,11 +1153,24 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
 
     AppState state;
     state.instance = instance;
-    state.uiFont = static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+    state.uiFont = CreateFontW(-13, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                               DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+                               CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                               DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+    state.titleFont = CreateFontW(-28, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+                                  DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+                                  CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                                  DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+    state.subtitleFont = CreateFontW(-12, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                                     DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+                                     CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                                     DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
     state.codeFont = CreateFontW(-15, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
                                  DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
                                  CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
                                  FIXED_PITCH | FF_MODERN, L"Consolas");
+    state.backgroundBrush = CreateSolidBrush(kBackground);
+    state.panelBrush = CreateSolidBrush(kPanel);
 
     WNDCLASSEXW windowClass{};
     windowClass.cbSize = sizeof(windowClass);
@@ -971,7 +1179,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
     windowClass.hInstance = instance;
     windowClass.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
     windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-    windowClass.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+    windowClass.hbrBackground = state.backgroundBrush;
     windowClass.lpszClassName = kWindowClass;
     windowClass.hIconSm = windowClass.hIcon;
     if (!RegisterClassExW(&windowClass)) return 1;
@@ -980,12 +1188,14 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
         0, kWindowClass, L"CrucibleCpp GUI", WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT, 1100, 760, nullptr, nullptr, instance, &state);
     if (!window) return 1;
+    BOOL darkTitle = TRUE;
+    DwmSetWindowAttribute(window, 20, &darkTitle, sizeof(darkTitle));
     RECT work{};
     SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
     const bool tooLarge = (work.right - work.left) < 1100 ||
                           (work.bottom - work.top) < 760;
     DragAcceptFiles(window, TRUE);
-    ShowWindow(window, tooLarge ? SW_SHOWMAXIMIZED : showCommand);
+    ShowWindow(window, tooLarge ? SW_SHOWMAXIMIZED : SW_SHOWNORMAL);
     UpdateWindow(window);
     // The first WM_SIZE can arrive before the child controls exist. Force one
     // final layout against the real client rectangle after the window is shown.
@@ -1010,5 +1220,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
     }
     return static_cast<int>(message.wParam);
 }
+
+
+
+
 
 
