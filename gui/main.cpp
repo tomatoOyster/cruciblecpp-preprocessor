@@ -8,12 +8,14 @@
 #include <shellapi.h>
 
 #include <algorithm>
+#include <cmath>
 #include <atomic>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <thread>
 #include <vector>
 
@@ -146,6 +148,16 @@ std::string diagnosticPath(const crucible::Diagnostic& diagnostic) {
     if (!diagnostic.loc.presumedFile.empty()) return diagnostic.loc.presumedFile;
     if (diagnostic.loc.file) return diagnostic.loc.file->displayPath;
     return "<command line>";
+}
+
+COLORREF blendColor(COLORREF from, COLORREF to, float t) {
+    t = std::clamp(t, 0.0f, 1.0f);
+    const auto mix = [t](int a, int b) {
+        return static_cast<int>(a + (b - a) * t + 0.5f);
+    };
+    return RGB(mix(GetRValue(from), GetRValue(to)),
+               mix(GetGValue(from), GetGValue(to)),
+               mix(GetBValue(from), GetBValue(to)));
 }
 
 struct ProcessResult {
@@ -318,6 +330,8 @@ struct AppState {
     RECT diagLabelRect{};
     int lastClientWidth = -1;
     int lastClientHeight = -1;
+    std::unordered_map<HWND, float> hoverProgress;
+    bool hoverTimerRunning = false;
     std::thread worker;
     std::thread auxWorker;
     int auxAction = 0; // 1 = compare, 2 = compile
@@ -1055,6 +1069,52 @@ struct AppState {
                   DT_LEFT | DT_SINGLELINE | DT_VCENTER);
     }
 
+    std::vector<HWND> ownerDrawButtons() const {
+        return {browseInput, browseOutput, browseGcc, detectGcc, run, cancel,
+                options, copyCli, compareGcc, compileOutput};
+    }
+
+    HWND buttonUnderCursor() const {
+        POINT point{};
+        GetCursorPos(&point);
+        HWND under = WindowFromPoint(point);
+        if (!under || GetParent(under) != window) return nullptr;
+        const auto buttons = ownerDrawButtons();
+        for (HWND button : buttons) {
+            if (button == under && IsWindowEnabled(button)) return under;
+        }
+        return nullptr;
+    }
+
+    void pollHoverStart() {
+        if (hoverTimerRunning) return;
+        if (buttonUnderCursor()) {
+            SetTimer(window, 2, 16, nullptr);
+            hoverTimerRunning = true;
+        }
+    }
+
+    void animateHover() {
+        const HWND under = buttonUnderCursor();
+        bool active = false;
+        for (HWND button : ownerDrawButtons()) {
+            auto found = hoverProgress.find(button);
+            float current = found == hoverProgress.end() ? 0.0f : found->second;
+            const float target = button == under ? 1.0f : 0.0f;
+            float next = current + (target - current) * 0.30f;
+            if (std::abs(target - next) < 0.02f) next = target;
+            if (std::abs(next - current) > 0.001f) {
+                hoverProgress[button] = next;
+                InvalidateRect(button, nullptr, TRUE);
+                active = true;
+            }
+        }
+        if (!active && !under) {
+            KillTimer(window, 2);
+            hoverTimerRunning = false;
+        }
+    }
+
     void drawButton(const DRAWITEMSTRUCT* item) {
         if (!item) return;
         const int id = static_cast<int>(item->CtlID);
@@ -1062,6 +1122,11 @@ struct AppState {
         const bool danger = id == IDC_CANCEL;
         const bool selected = (item->itemState & ODS_SELECTED) != 0;
         const bool disabled = (item->itemState & ODS_DISABLED) != 0;
+        float hover = 0.0f;
+        if (const auto found = hoverProgress.find(item->hwndItem);
+            found != hoverProgress.end()) {
+            hover = found->second;
+        }
         COLORREF fill = primary ? kAccent : kPanel;
         COLORREF border = primary ? kAccent : kBorder;
         COLORREF textColor = primary ? RGB(255, 255, 255) : kText;
@@ -1069,6 +1134,19 @@ struct AppState {
             fill = kPanel;
             border = RGB(220, 180, 180);
             textColor = kDanger;
+        }
+        if (hover > 0.0f && !disabled) {
+            if (primary) {
+                fill = blendColor(kAccent, RGB(24, 164, 151), hover);
+                border = blendColor(kAccent, RGB(24, 164, 151), hover);
+            } else if (danger) {
+                fill = blendColor(kPanel, RGB(255, 238, 238), hover);
+                border = blendColor(RGB(220, 180, 180), kDanger, hover);
+            } else {
+                fill = blendColor(kPanel, kAccentSoft, hover);
+                border = blendColor(kBorder, kAccent, hover);
+                textColor = blendColor(kText, RGB(5, 96, 90), hover);
+            }
         }
         if (selected) {
             fill = primary ? RGB(6, 104, 98) : kAccentSoft;
@@ -1120,6 +1198,9 @@ struct AppState {
                     layoutForWindow();
                     InvalidateRect(window, nullptr, TRUE);
                 }
+                pollHoverStart();
+            } else if (wParam == 2) {
+                animateHover();
             }
             return 0;
         case WM_SIZE:
@@ -1208,6 +1289,7 @@ struct AppState {
             return 0;
         case WM_DESTROY:
             KillTimer(window, 1);
+            KillTimer(window, 2);
             saveSettings();
             if (uiFont) DeleteObject(uiFont);
             if (titleFont) DeleteObject(titleFont);
