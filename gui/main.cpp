@@ -776,6 +776,19 @@ struct AppState {
                                    settingsPath().c_str());
     }
 
+    void recordLaunch() const {
+        const std::filesystem::path path = settingsPath().parent_path() /
+                                           L"launch-count.ini";
+        wchar_t buffer[32]{};
+        GetPrivateProfileStringW(L"stats", L"launches", L"0", buffer,
+                                 static_cast<DWORD>(std::size(buffer)),
+                                 path.c_str());
+        const unsigned long long previous = _wcstoui64(buffer, nullptr, 10);
+        const std::wstring next = std::to_wstring(previous + 1);
+        WritePrivateProfileStringW(L"stats", L"launches", next.c_str(),
+                                   path.c_str());
+    }
+
     void loadSettings() {
         agreementAccepted = getIni(L"agreement", L"0") == L"1";
         // Source and output start empty by design; the user must choose them
@@ -1838,6 +1851,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
 
     AppState state;
     state.instance = instance;
+    state.recordLaunch();
     state.uiFont = CreateFontW(-13, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
                                DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
                                CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
