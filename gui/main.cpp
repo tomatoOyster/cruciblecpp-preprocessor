@@ -316,6 +316,8 @@ struct AppState {
     RECT resultRect{};
     RECT outputLabelRect{};
     RECT diagLabelRect{};
+    int lastClientWidth = -1;
+    int lastClientHeight = -1;
     std::thread worker;
     std::thread auxWorker;
     int auxAction = 0; // 1 = compare, 2 = compile
@@ -445,6 +447,8 @@ struct AppState {
         GetWindowRect(window, &windowRect);
         int width = client.right - client.left;
         int height = client.bottom - client.top;
+        lastClientWidth = width;
+        lastClientHeight = height;
         const int physicalWidth = windowRect.right - windowRect.left;
         const int physicalHeight = windowRect.bottom - windowRect.top;
         // On a DPI-virtualized or very small desktop, client coordinates can be
@@ -1120,6 +1124,18 @@ struct AppState {
             loadSettings();
             layoutForWindow();
             return 0;
+        case WM_TIMER:
+            if (wParam == 1) {
+                RECT current{};
+                GetClientRect(window, &current);
+                const int cw = current.right - current.left;
+                const int ch = current.bottom - current.top;
+                if (cw != lastClientWidth || ch != lastClientHeight) {
+                    layoutForWindow();
+                    InvalidateRect(window, nullptr, TRUE);
+                }
+            }
+            return 0;
         case WM_SIZE:
             PostMessageW(window, kLayoutMessage, 0, 0);
             return 0;
@@ -1211,6 +1227,7 @@ struct AppState {
             DestroyWindow(window);
             return 0;
         case WM_DESTROY:
+            KillTimer(window, 1);
             saveSettings();
             if (uiFont) DeleteObject(uiFont);
             if (titleFont) DeleteObject(titleFont);
@@ -1528,8 +1545,19 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
     const bool tooLarge = (work.right - work.left) < 1100 ||
                           (work.bottom - work.top) < 760;
     DragAcceptFiles(window, TRUE);
-    ShowWindow(window, tooLarge ? SW_SHOWMAXIMIZED : SW_SHOWNORMAL);
+    ShowWindow(window, SW_SHOWNORMAL);
+    if (tooLarge) {
+        // Never create a window larger than the usable desktop: the lower
+        // output/diagnostics panes would otherwise be clipped off-screen.
+        RECT workArea{};
+        SystemParametersInfoW(SPI_GETWORKAREA, 0, &workArea, 0);
+        const int targetWidth = std::max(480, static_cast<int>(workArea.right - workArea.left));
+        const int targetHeight = std::max(360, static_cast<int>(workArea.bottom - workArea.top));
+        SetWindowPos(window, nullptr, workArea.left, workArea.top,
+                     targetWidth, targetHeight, SWP_NOZORDER);
+    }
     UpdateWindow(window);
+    SetTimer(window, 1, 100, nullptr);
     // The first WM_SIZE can arrive before the child controls exist. Force one
     // final layout against the real client rectangle after the window is shown.
     RECT client{};
@@ -1553,6 +1581,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
     }
     return static_cast<int>(message.wParam);
 }
+
 
 
 
