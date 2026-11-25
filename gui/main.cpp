@@ -23,6 +23,7 @@ namespace {
 constexpr wchar_t kWindowClass[] = L"CrucibleCppGuiWindow";
 constexpr UINT kRunDoneMessage = WM_APP + 1;
 constexpr UINT kLayoutMessage = WM_APP + 2;
+constexpr UINT kAuxDoneMessage = WM_APP + 3;
 constexpr int kMaxDisplayBytes = 8 * 1024 * 1024;
 
 constexpr COLORREF kBackground = RGB(244, 251, 249);
@@ -57,6 +58,8 @@ enum ControlId : int {
     IDC_CANCEL,
     IDC_OPTIONS,
     IDC_COPY_CLI,
+    IDC_COMPARE_GCC,
+    IDC_COMPILE_OUTPUT,
 };
 
 std::wstring utf8ToWide(const std::string& text) {
@@ -145,6 +148,139 @@ std::string diagnosticPath(const crucible::Diagnostic& diagnostic) {
     return "<command line>";
 }
 
+struct ProcessResult {
+    bool started = false;
+    DWORD exitCode = 1;
+    std::string text;
+};
+
+std::wstring quoteArgument(const std::wstring& value) {
+    std::wstring result = L"\"";
+    for (wchar_t c : value) {
+        if (c == L'"') result += L"\\\"";
+        else result.push_back(c);
+    }
+    result += L"\"";
+    return result;
+}
+
+std::wstring cppCompilerFor(const std::wstring& compiler) {
+    if (compiler.empty()) return compiler;
+    std::filesystem::path path(compiler);
+    const std::wstring name = path.filename().wstring();
+    if (name == L"gcc.exe" || name == L"gcc") {
+        std::filesystem::path candidate = path.parent_path() / L"g++.exe";
+        std::error_code ec;
+        if (std::filesystem::exists(candidate, ec)) return candidate.wstring();
+    }
+    return compiler;
+}
+
+ProcessResult runProcess(const std::wstring& command,
+                         const std::filesystem::path& workingDirectory) {
+    ProcessResult result;
+    SECURITY_ATTRIBUTES security{};
+    security.nLength = sizeof(security);
+    security.bInheritHandle = TRUE;
+    HANDLE readPipe = nullptr;
+    HANDLE writePipe = nullptr;
+    if (!CreatePipe(&readPipe, &writePipe, &security, 0)) return result;
+    SetHandleInformation(readPipe, HANDLE_FLAG_INHERIT, 0);
+
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+    startup.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
+    startup.wShowWindow = SW_HIDE;
+    startup.hStdOutput = writePipe;
+    startup.hStdError = writePipe;
+    startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    PROCESS_INFORMATION process{};
+    std::vector<wchar_t> mutableCommand(command.begin(), command.end());
+    mutableCommand.push_back(L'\0');
+    std::wstring cwd = workingDirectory.wstring();
+    if (!CreateProcessW(nullptr, mutableCommand.data(), nullptr, nullptr, TRUE,
+                        CREATE_NO_WINDOW, nullptr, cwd.empty() ? nullptr : cwd.c_str(),
+                        &startup, &process)) {
+        CloseHandle(readPipe);
+        CloseHandle(writePipe);
+        return result;
+    }
+    CloseHandle(writePipe);
+    std::string output;
+    char buffer[4096];
+    DWORD read = 0;
+    while (ReadFile(readPipe, buffer, sizeof(buffer), &read, nullptr) && read > 0) {
+        output.append(buffer, read);
+        if (output.size() > 16 * 1024 * 1024) break;
+    }
+    WaitForSingleObject(process.hProcess, INFINITE);
+    GetExitCodeProcess(process.hProcess, &result.exitCode);
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
+    CloseHandle(readPipe);
+    result.started = true;
+    result.text = std::move(output);
+    return result;
+}
+
+std::vector<std::string> compareLines(const std::string& text) {
+    std::vector<std::string> lines;
+    std::string current;
+    for (char c : text) {
+        if (c == '\n') {
+            if (!current.empty() && current.back() == '\r') current.pop_back();
+            const auto first = current.find_first_not_of(" \t");
+            const auto last = current.find_last_not_of(" \t");
+            if (first != std::string::npos) {
+                std::string line = current.substr(first, last - first + 1);
+                // Line markers are path/offset dependent; compare the tokens.
+                if (!(line.size() > 2 && line[0] == '#' &&
+                      (line[1] == ' ' || line[1] == 'l'))) {
+                    lines.push_back(std::move(line));
+                }
+            }
+            current.clear();
+        } else {
+            current.push_back(c);
+        }
+    }
+    if (!current.empty()) {
+        const auto first = current.find_first_not_of(" \t");
+        const auto last = current.find_last_not_of(" \t");
+        if (first != std::string::npos) lines.push_back(current.substr(first, last - first + 1));
+    }
+    return lines;
+}
+
+std::string comparePreprocessed(const std::string& crucible, const std::string& gcc) {
+    const auto left = compareLines(crucible);
+    const auto right = compareLines(gcc);
+    const std::size_t maxLines = 3000;
+    if (left.size() > maxLines || right.size() > maxLines) {
+        return "文件过大，跳过逐行对比（上限 " + std::to_string(maxLines) + " 行）\n";
+    }
+    std::ostringstream diff;
+    std::size_t differences = 0;
+    const std::size_t count = std::max(left.size(), right.size());
+    for (std::size_t i = 0; i < count; ++i) {
+        const std::string* a = i < left.size() ? &left[i] : nullptr;
+        const std::string* b = i < right.size() ? &right[i] : nullptr;
+        if (a && b && *a == *b) continue;
+        if (differences++ >= 200) continue;
+        diff << "行 " << (i + 1) << "\n";
+        diff << "- " << (a ? *a : "<missing>") << "\n";
+        diff << "+ " << (b ? *b : "<missing>") << "\n";
+    }
+    if (differences == 0) {
+        return "一致（忽略行标记和空行）\n";
+    }
+    diff << "\n共 " << differences << " 处差异";
+    if (differences > 200) diff << "，仅显示前 200 处";
+    diff << "\n";
+    return diff.str();
+}
+
+
 std::vector<std::wstring> splitOptionLines(std::wstring text);
 
 struct AppState {
@@ -162,6 +298,8 @@ struct AppState {
     HWND cancel = nullptr;
     HWND options = nullptr;
     HWND copyCli = nullptr;
+    HWND compareGcc = nullptr;
+    HWND compileOutput = nullptr;
     HWND outputView = nullptr;
     HWND diagView = nullptr;
     HWND status = nullptr;
@@ -179,6 +317,10 @@ struct AppState {
     RECT outputLabelRect{};
     RECT diagLabelRect{};
     std::thread worker;
+    std::thread auxWorker;
+    int auxAction = 0; // 1 = compare, 2 = compile
+    std::string auxText;
+    std::string auxStatus;
     std::atomic_bool cancelRequested{false};
     std::wstring selectedInput;
     std::wstring selectedOutput;
@@ -241,12 +383,18 @@ struct AppState {
         cancel = CreateWindowExW(0, L"BUTTON", L"取消", buttonStyle,
                                  0, 0, 10, 10, window,
                                  reinterpret_cast<HMENU>(IDC_CANCEL), instance, nullptr);
-        options = CreateWindowExW(0, L"BUTTON", L"选项…", buttonStyle,
+        options = CreateWindowExW(0, L"BUTTON", L"选项", buttonStyle,
                                   0, 0, 10, 10, window,
                                   reinterpret_cast<HMENU>(IDC_OPTIONS), instance, nullptr);
-        copyCli = CreateWindowExW(0, L"BUTTON", L"复制 CLI 命令", buttonStyle,
+        copyCli = CreateWindowExW(0, L"BUTTON", L"复制 CLI", buttonStyle,
                                   0, 0, 10, 10, window,
                                   reinterpret_cast<HMENU>(IDC_COPY_CLI), instance, nullptr);
+        compareGcc = CreateWindowExW(0, L"BUTTON", L"对比 g++ -E", buttonStyle,
+                                     0, 0, 10, 10, window,
+                                     reinterpret_cast<HMENU>(IDC_COMPARE_GCC), instance, nullptr);
+        compileOutput = CreateWindowExW(0, L"BUTTON", L"编译 .i", buttonStyle,
+                                        0, 0, 10, 10, window,
+                                        reinterpret_cast<HMENU>(IDC_COMPILE_OUTPUT), instance, nullptr);
         outputView = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
                                      WS_CHILD | WS_VISIBLE | WS_VSCROLL |
                                          WS_HSCROLL | ES_MULTILINE | ES_READONLY |
@@ -280,7 +428,7 @@ struct AppState {
         for (HWND control : {input, output, gcc}) {
             SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont), TRUE);
         }
-        for (HWND control : {browseInput, browseOutput, browseGcc, detectGcc, run, cancel, options, copyCli}) {
+        for (HWND control : {browseInput, browseOutput, browseGcc, detectGcc, run, cancel, options, copyCli, compareGcc, compileOutput}) {
             SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont), TRUE);
         }
         SendMessageW(standard, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont), TRUE);
@@ -303,6 +451,14 @@ struct AppState {
         // larger than the real window. Clamp so every control stays visible.
         if (width > physicalWidth) width = physicalWidth;
         if (height > physicalHeight) height = physicalHeight;
+        // The GUI is DPI-unaware on some systems (Windows virtualizes the
+        // client size). Lay out in 96-DPI units so children fit the real
+        // window at 125%/150%/200% scaling.
+        const UINT dpi = GetDpiForWindow(window);
+        if (dpi > 96) {
+            width = MulDiv(width, 96, static_cast<int>(dpi));
+            height = MulDiv(height, 96, static_cast<int>(dpi));
+        }
         layout(width, height);
     }
 
@@ -332,10 +488,12 @@ struct AppState {
                    buttonWidth + 10, 27, TRUE);
         y += row;
         MoveWindow(standard, editX, y, 130, 200, TRUE);
-        MoveWindow(run, editX + 150, y, 86, 29, TRUE);
-        MoveWindow(cancel, editX + 240, y, 72, 29, TRUE);
-        MoveWindow(options, editX + 318, y, 72, 29, TRUE);
-        MoveWindow(copyCli, editX + 396, y, 112, 29, TRUE);
+        MoveWindow(run, editX + 120, y, 72, 29, TRUE);
+        MoveWindow(cancel, editX + 198, y, 56, 29, TRUE);
+        MoveWindow(compareGcc, editX + 260, y, 96, 29, TRUE);
+        MoveWindow(compileOutput, editX + 362, y, 70, 29, TRUE);
+        MoveWindow(options, editX + 438, y, 56, 29, TRUE);
+        MoveWindow(copyCli, editX + 500, y, 96, 29, TRUE);
         formRect = {margin - 8, top - 12, width - margin + 8, top + row * 4 + 12};
         y = top + row * 4 + 30;
         outputLabelRect = {margin, y, width - margin, y + 20};
@@ -379,7 +537,8 @@ struct AppState {
     void setRunning(bool value) {
         running = value;
         for (HWND control : {input, browseInput, output, browseOutput, gcc,
-                             browseGcc, detectGcc, standard, run, options}) {
+                             browseGcc, detectGcc, standard, run, options, compareGcc,
+                             compileOutput}) {
             EnableWindow(control, !value);
         }
         EnableWindow(cancel, value);
@@ -600,6 +759,140 @@ struct AppState {
         setText(status, (L"找到 GCC " + utf8ToWide(discovery.version)).c_str());
     }
 
+    std::wstring effectiveOutputPath() {
+        return selectedOutput.empty() ? textOf(output) : selectedOutput;
+    }
+
+    std::wstring effectiveGccPath() {
+        return selectedGcc.empty() ? textOf(gcc) : selectedGcc;
+    }
+
+    std::wstring standardOption() const {
+        const int index = static_cast<int>(SendMessageW(standard, CB_GETCURSEL, 0, 0));
+        return index == 0 ? L"c++11" : index == 1 ? L"c++14" :
+               index == 2 ? L"c++17" : L"c++20";
+    }
+
+    void startAux(int action) {
+        if (running) return;
+        const std::wstring outputPath = effectiveOutputPath();
+        if (outputPath.empty()) {
+            MessageBoxW(window, L"请先设置输出 .i 文件。", L"CrucibleCpp GUI",
+                        MB_ICONWARNING);
+            return;
+        }
+        std::error_code ec;
+        if (!std::filesystem::exists(outputPath, ec)) {
+            MessageBoxW(window, L"输出 .i 不存在，请先执行预处理。", L"CrucibleCpp GUI",
+                        MB_ICONWARNING);
+            return;
+        }
+        auxAction = action;
+        auxText.clear();
+        auxStatus.clear();
+        cancelRequested.store(false);
+        setRunning(true);
+        setText(status, action == 1 ? L"正在对比 g++ -E…" : L"正在编译 .i…");
+        const std::wstring inputPath = selectedInput.empty() ? textOf(input) : selectedInput;
+        const std::wstring gccPath = effectiveGccPath();
+        const std::wstring standardName = standardOption();
+        const auto includes = includeDirs;
+        const auto defines = commandActions;
+        const bool keepLines = lineMarkers;
+        const bool keepCommentsOption = keepComments;
+        auxWorker = std::thread([this, action, outputPath, inputPath, gccPath,
+                                 standardName, includes, defines, keepLines,
+                                 keepCommentsOption]() {
+            std::wstring compiler = cppCompilerFor(gccPath);
+            if (compiler.empty()) {
+                const auto discovery = crucible::discoverGccFromPath();
+                if (!discovery.found) {
+                    auxStatus = "失败：找不到 GCC";
+                    auxText = discovery.error.empty() ? "GCC not found" : discovery.error;
+                    PostMessageW(window, kAuxDoneMessage, 0, 0);
+                    return;
+                }
+                compiler = discovery.compiler.wstring();
+            }
+            std::wstring command = quoteArgument(compiler);
+            command += L" -std=" + standardName;
+            if (action == 1) {
+                command += L" -E";
+                if (!keepLines) command += L" -P";
+                if (keepCommentsOption) command += L" -C";
+            }
+            for (const auto& dir : includes) {
+                command += L" -I " + quoteArgument(dir.wstring());
+            }
+            for (const auto& define : defines) {
+                command += L" -D " + quoteArgument(utf8ToWide(define.text));
+            }
+            const std::filesystem::path outputFile(outputPath);
+            const std::filesystem::path workingDir = outputFile.parent_path();
+            if (action == 1) {
+                if (inputPath.empty()) {
+                    auxStatus = "失败：没有源文件";
+                    auxText = "请先选择源文件。";
+                    PostMessageW(window, kAuxDoneMessage, 0, 0);
+                    return;
+                }
+                std::filesystem::path temp = std::filesystem::temp_directory_path() /
+                    (L"cruciblecpp-gcc-e-" + std::to_wstring(GetCurrentProcessId()) + L".i");
+                command += L" " + quoteArgument(inputPath) + L" -o " + quoteArgument(temp.wstring());
+                const ProcessResult result = runProcess(command, workingDir);
+                std::error_code removeError;
+                bool truncated = false;
+                const std::string gccOutput = readFile(temp, truncated);
+                std::filesystem::remove(temp, removeError);
+                if (!result.started) {
+                    auxStatus = "失败：无法启动 g++";
+                    auxText = "无法启动 GCC 进程。\n";
+                } else if (result.exitCode != 0) {
+                    auxStatus = "g++ -E 失败";
+                    auxText = "g++ -E 退出码: " + std::to_string(result.exitCode) + "\n\n" +
+                              result.text;
+                } else {
+                    bool ownTruncated = false;
+                    const std::string ownOutput = readFile(outputPath, ownTruncated);
+                    auxStatus = "对比完成";
+                    auxText = "CrucibleCpp vs g++ -E\n";
+                    auxText += "GCC: " + wideToUtf8(compiler) + "\n\n";
+                    auxText += comparePreprocessed(ownOutput, gccOutput);
+                    if (truncated || ownTruncated) {
+                        auxText += "\n注意：文件超过显示上限，只比较了前 8 MiB。\n";
+                    }
+                }
+            } else {
+                std::filesystem::path exePath(outputPath);
+                exePath.replace_extension(L".exe");
+                command += L" " + quoteArgument(outputPath) + L" -o " +
+                           quoteArgument(exePath.wstring());
+                const ProcessResult result = runProcess(command, workingDir);
+                if (!result.started) {
+                    auxStatus = "失败：无法启动 g++";
+                    auxText = "无法启动 GCC 进程。\n";
+                } else if (result.exitCode != 0) {
+                    auxStatus = "编译失败";
+                    auxText = "g++ 退出码: " + std::to_string(result.exitCode) + "\n\n" +
+                              result.text;
+                } else {
+                    auxStatus = "编译成功";
+                    auxText = "编译成功。\n\n输出: " + wideToUtf8(exePath.wstring()) + "\n";
+                    if (!result.text.empty()) auxText += "\n" + result.text;
+                }
+            }
+            PostMessageW(window, kAuxDoneMessage, 0, 0);
+        });
+    }
+
+    void finishAux() {
+        if (auxWorker.joinable()) auxWorker.join();
+        setRunning(false);
+        setText(diagView, editMultiline(utf8ToWide(auxText)).c_str());
+        setText(status, utf8ToWide(auxStatus).c_str());
+        auxAction = 0;
+    }
+
     void startRun() {
         if (running) return;
         const std::wstring inputPath = selectedInput.empty() ? textOf(input) : selectedInput;
@@ -651,7 +944,6 @@ struct AppState {
             options.pchPolicy = pchPolicy;
             options.lineMarkers = lineMarkers;
             options.keepComments = keepComments;
-            options.lineMarkers = true;
             options.maxErrors = 50;
 
             int code = 2;
@@ -865,6 +1157,8 @@ struct AppState {
             case IDC_RUN: startRun(); return 0;
             case IDC_CANCEL: cancelRequested.store(true); setText(status, L"正在取消…"); return 0;
             case IDC_OPTIONS: showOptions(); return 0;
+            case IDC_COMPARE_GCC: startAux(1); return 0;
+            case IDC_COMPILE_OUTPUT: startAux(2); return 0;
             case IDC_COPY_CLI:
                 copyToClipboard(buildCliCommand());
                 setText(status, L"CLI 命令已复制到剪贴板");
@@ -874,6 +1168,9 @@ struct AppState {
             break;
         case kRunDoneMessage:
             finishRun();
+            return 0;
+        case kAuxDoneMessage:
+            finishAux();
             return 0;
         case WM_DROPFILES: {
             HDROP drop = reinterpret_cast<HDROP>(wParam);
@@ -1233,6 +1530,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
     }
     return static_cast<int>(message.wParam);
 }
+
 
 
 
