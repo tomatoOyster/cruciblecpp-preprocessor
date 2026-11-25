@@ -865,7 +865,10 @@ struct AppState {
             } else {
                 std::filesystem::path exePath(outputPath);
                 exePath.replace_extension(L".exe");
-                command += L" " + quoteArgument(outputPath) + L" -o " +
+                // .i is "preprocessed C" to GCC; force C++ and suppress
+                // warnings from included system headers, which are no longer
+                // marked as system headers in a preprocessed file.
+                command += L" -x c++ -w " + quoteArgument(outputPath) + L" -o " +
                            quoteArgument(exePath.wstring());
                 const ProcessResult result = runProcess(command, workingDir);
                 if (!result.started) {
