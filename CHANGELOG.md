@@ -2,9 +2,9 @@
 
 ## V3.1.0 — 2026-11-26
 
-### Windows GUI（Preview）
+### Windows GUI（正式版）
 
-- 原生 Win32 GUI，和 CLI 共用 `cpp_preproc`，无第三方 UI 库。
+- 原生 Win32 GUI 正式版，和 CLI 共用 `cpp_preproc`，无第三方 UI 库。
 - 输入/输出路径必须显式选择；空路径点击“预处理”提示“请先选择目录”。
 - 支持 GCC 自动检测、C++11/14/17/20、工作线程预处理和取消。
 - 选项：Include 目录、宏定义、PCH 策略、行标记、保留注释。
@@ -23,7 +23,7 @@
 
 - 版本号统一为 `3.1.0`。
 - CLI 版本：`cruciblecpp-preprocessor 3.1.0`。
-- GUI 标注为 Preview，CLI 保持独立。
+- GUI 正式版，CLI 保持独立。
 
 ## V3.0.1 — 2026-11-17
 

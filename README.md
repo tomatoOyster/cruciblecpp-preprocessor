@@ -15,13 +15,18 @@
   <img alt="No runtime dependencies" src="https://img.shields.io/badge/dependencies-0-073b3a.svg">
 </p>
 
-> **V3.1.0** — Windows x64 独立 C++ 预处理器，自动发现 PATH 中的 GCC 头文件目录，直接替代 `g++ -E` 的预处理步骤。
+> **V3.1.0** — Windows x64 独立 C++ 预处理器，同时提供 CLI 和原生 Windows GUI；自动发现 PATH 中的 GCC 头文件目录，直接替代 `g++ -E` 的预处理步骤。
 >
-> [下载 V3.1.0](https://github.com/tomatoOyster/cruciblecpp-preprocessor/releases/tag/v3.1.0) · [Changelog](CHANGELOG.md) · [License](LICENSE)
+> [下载 V3.1.0](https://github.com/tomatoOyster/cruciblecpp-preprocessor/releases/tag/v3.1.0) · [GUI Windows x64](https://github.com/tomatoOyster/cruciblecpp-preprocessor/releases/download/v3.1.0/cruciblecpp-preprocessor-v3.1.0-win64-gui.zip) · [Changelog](CHANGELOG.md) · [License](LICENSE)
 >
 > 官网：[hfsdr.cn](https://hfsdr.cn) · [官网源码（MIT）](https://github.com/tomatoOyster/cruciblecpp-website)
 
-一个用 C++20 实现的独立 C++ 预处理器，兼容矩阵锁定为：
+一个用 C++20 实现的独立 C++ 预处理器，提供两个独立前端：
+
+- `cruciblecpp-preprocessor.exe`：CLI，适合脚本、构建系统和编辑器集成
+- `cruciblecpp-gui.exe`：原生 Windows GUI，适合日常交互式使用
+
+两个前端共用同一套 `cpp_preproc` 核心，输出和诊断语义一致。兼容矩阵锁定为：
 
 > **Windows x64 + MinGW-w64 UCRT64 + GCC 15.2.0 + GCC 13/14/15 的 C++11 / C++14 / C++17 / C++20**
 
@@ -29,8 +34,8 @@
 
 ## 目录
 
+- [Windows GUI（正式版）](#windows-gui正式版)
 - [官方 VS Code 插件](#官方-vs-code-插件)
-- [Windows GUI（预览）](#windows-gui预览)
 - [预编译头（PCH）](#预编译头pch)
 - [功能](#功能)
 - [目录结构](#目录结构)
@@ -45,6 +50,86 @@
 
 ---
 
+## Windows GUI（正式版）
+
+从 **V3.1.0** 起，Windows GUI 作为正式组件发布，不再是预览功能。它和 CLI 共用同一个 `cpp_preproc` 核心，不需要安装 Qt、WebView2、Electron、Dear ImGui、Scintilla 或 JSON 库。
+
+```text
+cruciblecpp-preprocessor.exe   命令行版本
+cruciblecpp-gui.exe            原生 Win32 GUI
+```
+
+### 下载
+
+- [GUI Windows x64 压缩包](https://github.com/tomatoOyster/cruciblecpp-preprocessor/releases/download/v3.1.0/cruciblecpp-preprocessor-v3.1.0-win64-gui.zip)
+- [GUI 独立 exe](https://github.com/tomatoOyster/cruciblecpp-preprocessor/releases/download/v3.1.0/cruciblecpp-gui.exe)
+- [CLI Windows x64 压缩包](https://github.com/tomatoOyster/cruciblecpp-preprocessor/releases/download/v3.1.0/cruciblecpp-preprocessor-v3.1.0-win64.zip)
+
+### GUI 功能
+
+- 选择源文件和输出 `.i`，两者必须显式选择；为空时点击“预处理”会提示“请先选择目录”。
+- 自动检测 PATH 中的 GCC，也可以手动指定 `g++.exe`。
+- 选择 C++11 / C++14 / C++17 / C++20。
+- 在工作线程中执行预处理，不阻塞界面；支持取消。
+- 只读输出查看器，显示 `.i` 内容和结构化诊断。
+- 选项对话框：
+  - Include 目录
+  - 宏定义
+  - PCH 策略：ignore / warn / error / report
+  - 输出行标记
+  - 保留注释
+- 将当前输出与 `g++ -E` 对比；对比时忽略行标记和空行，差异显示在诊断区。
+- 把 `.i` 直接交给 GCC 编译为 `.exe`，编译错误和退出码显示在诊断区。
+- 复制等价的 CLI 命令，便于把 GUI 操作迁移到脚本。
+- 拖放源文件到窗口。
+- 记住 GCC、C++ 标准和选项设置；源文件/输出路径每次都从空白开始。
+- 自绘按钮、悬停动画、DPI 和窗口尺寸自适应的输出/诊断布局。
+
+### 典型流程
+
+```text
+选择源文件
+  → 选择输出 .i
+  → 自动检测 GCC
+  → 选择 C++ 标准
+  → 预处理
+  → 查看输出/诊断
+  → 对比 g++ -E 或编译 .i
+```
+
+“对比 g++ -E”和“编译 .i”都使用 GUI 当前选择的 GCC 路径和 C++ 标准，不需要额外配置。
+
+### 命令行启动
+
+GUI 也支持无交互启动，便于脚本和自动化测试：
+
+```powershell
+cruciblecpp-gui.exe --input src\main.cpp --output build\main.i --run
+```
+
+可选参数：
+
+```text
+--input <file>     源文件
+--output <file>    输出 .i
+--gcc <g++.exe>    指定 GCC
+--run              启动后立即预处理
+```
+
+### 构建
+
+```powershell
+cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
+cmake --build build --target cruciblecpp-gui
+```
+
+### 设计边界
+
+- GUI 仅支持 Windows x64。
+- 预处理核心只支持 GCC 13 / 14 / 15，不支持 Clang/MSVC。
+- GUI 和 CLI 的输出语义一致；GUI 不绕过预处理器，也不使用另一套实现。
+- 输出查看器当前使用原生只读 Edit 控件；超大文件会按显示上限截断预览，但完整 `.i` 仍写入磁盘。
+
 ## 官方 VS Code 插件
 
 官方插件：**[CrucibleCpp for VS Code](https://github.com/tomatoOyster/cruciblecpp-vscode)**
@@ -58,44 +143,6 @@
 - 插件需要本仓库构建的 `cruciblecpp-preprocessor.exe`；如果不在工作区 `build`/`bin` 中，在 VS Code 设置里配置 `cruciblecpp.executable`。
 - 宏动画和 include 图需要 CrucibleCpp **2.2.0** 或更新版本；PCH 策略设置需要 **2.3.0** 或更新版本。
 
-## Windows GUI（预览）
-
-仓库包含一个原生 Windows GUI 预览版，和 CLI 共用同一个 `cpp_preproc` 核心：
-
-```text
-cruciblecpp-preprocessor.exe   命令行版本
-cruciblecpp-gui.exe            Windows GUI 版本
-```
-
-GUI 只使用 Windows SDK 和 C++ 标准库，不引入 Qt、WebView2、Electron、Dear ImGui 或 JSON 库。
-
-当前功能：
-
-- 选择源文件和输出 `.i`
-- 自动检测 PATH 中的 GCC，或手动指定 `g++.exe`
-- 选择 C++11 / C++14 / C++17 / C++20
-- 在工作线程中执行预处理，可取消
-- 查看 `.i` 输出和结构化诊断
-- 选项对话框：Include 目录、宏定义、PCH 策略、行标记、保留注释
-- 复制等价的 CLI 命令
-- 与 `g++ -E` 输出对比
-- 把 `.i` 直接交给 GCC 编译为 `.exe`
-- 拖放源文件到窗口
-- 记住上次使用的路径和选项
-- 命令行启动参数：
-
-```powershell
-cruciblecpp-gui.exe --input src\main.cpp --output build\main.i --run
-```
-
-构建：
-
-```powershell
-cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target cruciblecpp-gui
-```
-
-GUI 是 Windows 专用目标；CLI 仍保持独立。
 ## 预编译头（PCH）
 
 GCC 的 `g++ -E` **不会使用** `.gch`；PCH 只在真正编译时使用。因此本预处理器对 PCH 的语义是：

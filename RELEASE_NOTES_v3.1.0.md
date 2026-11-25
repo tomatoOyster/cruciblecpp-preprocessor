@@ -2,7 +2,9 @@
 
 Windows x64 standalone C++ preprocessor for GCC 13.3 / 14.3 / 15.2.
 
-## Windows GUI（Preview）
+GUI 从 V3.1.0 起作为正式组件发布，和 CLI 共用同一套核心。
+
+## Windows GUI（正式版）
 
 - 原生 Win32 GUI，和 CLI 共用 `cpp_preproc`，不依赖 Qt / WebView2 / Electron / Dear ImGui。
 - 源文件和输出 `.i` 路径必须显式选择；空路径点击“预处理”提示“请先选择目录”。
