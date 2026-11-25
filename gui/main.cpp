@@ -249,13 +249,15 @@ struct AppState {
         outputView = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
                                      WS_CHILD | WS_VISIBLE | WS_VSCROLL |
                                          WS_HSCROLL | ES_MULTILINE | ES_READONLY |
-                                         ES_AUTOVSCROLL | ES_AUTOHSCROLL,
+                                         ES_AUTOVSCROLL | ES_AUTOHSCROLL |
+                                         WS_CLIPSIBLINGS,
                                      0, 0, 10, 10, window,
                                      reinterpret_cast<HMENU>(IDC_OUTPUT_VIEW), instance, nullptr);
         diagView = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
                                    WS_CHILD | WS_VISIBLE | WS_VSCROLL |
                                        WS_HSCROLL | ES_MULTILINE | ES_READONLY |
-                                       ES_AUTOVSCROLL | ES_AUTOHSCROLL,
+                                       ES_AUTOVSCROLL | ES_AUTOHSCROLL |
+                                       WS_CLIPSIBLINGS,
                                    0, 0, 10, 10, window,
                                    reinterpret_cast<HMENU>(IDC_DIAG_VIEW), instance, nullptr);
         outputLabel = CreateWindowExW(0, L"STATIC", L"输出 .i",
@@ -831,9 +833,20 @@ struct AppState {
         }
         case WM_CTLCOLORSTATIC: {
             HDC dc = reinterpret_cast<HDC>(wParam);
-            SetBkMode(dc, TRANSPARENT);
+            HWND control = reinterpret_cast<HWND>(lParam);
+            if (control == outputView || control == diagView) {
+                // Read-only EDIT controls use WM_CTLCOLORSTATIC, not
+                // WM_CTLCOLOREDIT. Returning NULL_BRUSH here makes their
+                // background transparent and leaves scroll trails.
+                SetBkMode(dc, OPAQUE);
+                SetBkColor(dc, kPanel);
+                SetTextColor(dc, kText);
+                return reinterpret_cast<LRESULT>(panelBrush);
+            }
+            SetBkMode(dc, OPAQUE);
+            SetBkColor(dc, control == status ? kBackground : kPanel);
             SetTextColor(dc, kMuted);
-            return reinterpret_cast<LRESULT>(GetStockObject(NULL_BRUSH));
+            return reinterpret_cast<LRESULT>(control == status ? backgroundBrush : panelBrush);
         }
         case WM_CTLCOLOREDIT: {
             HDC dc = reinterpret_cast<HDC>(wParam);
@@ -1185,7 +1198,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
     if (!RegisterClassExW(&windowClass)) return 1;
 
     HWND window = CreateWindowExW(
-        0, kWindowClass, L"CrucibleCpp GUI", WS_OVERLAPPEDWINDOW,
+        WS_EX_COMPOSITED, kWindowClass, L"CrucibleCpp GUI",
+        WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
         CW_USEDEFAULT, CW_USEDEFAULT, 1100, 760, nullptr, nullptr, instance, &state);
     if (!window) return 1;
     BOOL darkTitle = TRUE;
