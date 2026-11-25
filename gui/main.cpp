@@ -493,13 +493,13 @@ struct AppState {
         MoveWindow(detectGcc, editX + gccW + 8 + buttonWidth + 6, y,
                    buttonWidth + 10, 27, TRUE);
         y += row;
-        MoveWindow(standard, editX, y, 130, 200, TRUE);
-        MoveWindow(run, editX + 120, y, 72, 29, TRUE);
-        MoveWindow(cancel, editX + 198, y, 56, 29, TRUE);
-        MoveWindow(compareGcc, editX + 260, y, 96, 29, TRUE);
-        MoveWindow(compileOutput, editX + 362, y, 70, 29, TRUE);
-        MoveWindow(options, editX + 438, y, 56, 29, TRUE);
-        MoveWindow(copyCli, editX + 500, y, 96, 29, TRUE);
+        MoveWindow(standard, editX, y, 120, 200, TRUE);
+        MoveWindow(run, editX + 128, y, 72, 29, TRUE);
+        MoveWindow(cancel, editX + 206, y, 56, 29, TRUE);
+        MoveWindow(compareGcc, editX + 268, y, 96, 29, TRUE);
+        MoveWindow(compileOutput, editX + 370, y, 70, 29, TRUE);
+        MoveWindow(options, editX + 446, y, 56, 29, TRUE);
+        MoveWindow(copyCli, editX + 508, y, 96, 29, TRUE);
         formRect = {margin - 8, top - 12, width - margin + 8, top + row * 4 + 12};
         y = top + row * 4 + 24;
         outputLabelRect = {margin, y, width - margin, y + 20};
