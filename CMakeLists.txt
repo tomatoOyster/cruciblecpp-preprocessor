@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(cruciblecpp_preprocessor VERSION 3.0.1 LANGUAGES CXX)
+project(cruciblecpp_preprocessor VERSION 3.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -55,6 +55,7 @@ if(WIN32)
         comdlg32
         shell32
         ole32
+        dwmapi
         Threads::Threads
     )
     target_compile_definitions(cruciblecpp-gui PRIVATE

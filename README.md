@@ -1,7 +1,7 @@
 # CrucibleCpp Preprocessor
 
 <p align="center">
-  <a href="https://github.com/tomatoOyster/cruciblecpp-preprocessor/releases/tag/v3.0.1"><img alt="Release v3.0.1" src="https://img.shields.io/github/v/release/tomatoOyster/cruciblecpp-preprocessor?color=087f78&amp;label=release"></a>
+  <a href="https://github.com/tomatoOyster/cruciblecpp-preprocessor/releases/tag/v3.1.0"><img alt="Release v3.1.0" src="https://img.shields.io/github/v/release/tomatoOyster/cruciblecpp-preprocessor?color=087f78&amp;label=release"></a>
   <a href="LICENSE"><img alt="License: CC BY-NC 4.0" src="https://img.shields.io/badge/license-CC%20BY--NC%204.0-087f78.svg"></a>
   <a href="LICENSE-MIT"><img alt="Legacy license: MIT" src="https://img.shields.io/badge/legacy%20license-MIT-087f78.svg"></a>
   <a href="https://hfsdr.cn"><img alt="Website hfsdr.cn" src="https://img.shields.io/badge/website-hfsdr.cn-087f78.svg"></a>
@@ -15,9 +15,9 @@
   <img alt="No runtime dependencies" src="https://img.shields.io/badge/dependencies-0-073b3a.svg">
 </p>
 
-> **V3.0.1** — Windows x64 独立 C++ 预处理器，自动发现 PATH 中的 GCC 头文件目录，直接替代 `g++ -E` 的预处理步骤。
+> **V3.1.0** — Windows x64 独立 C++ 预处理器，自动发现 PATH 中的 GCC 头文件目录，直接替代 `g++ -E` 的预处理步骤。
 >
-> [下载 V3.0.1](https://github.com/tomatoOyster/cruciblecpp-preprocessor/releases/tag/v3.0.1) · [Changelog](CHANGELOG.md) · [License](LICENSE)
+> [下载 V3.1.0](https://github.com/tomatoOyster/cruciblecpp-preprocessor/releases/tag/v3.1.0) · [Changelog](CHANGELOG.md) · [License](LICENSE)
 >
 > 官网：[hfsdr.cn](https://hfsdr.cn) · [官网源码（MIT）](https://github.com/tomatoOyster/cruciblecpp-website)
 
@@ -701,7 +701,7 @@ python tests\\realworld\\run_realworld.py `
 
 ## 许可证
 
-**V3.0.1 及以后：CC BY-NC 4.0**，见 [LICENSE](LICENSE) 和 [NOTICE](NOTICE)。
+**V3.0.0 及以后：CC BY-NC 4.0**，见 [LICENSE](LICENSE) 和 [NOTICE](NOTICE)。
 
 **V2.9.0 及以前：MIT**，旧许可证文本保留在 [LICENSE-MIT](LICENSE-MIT)。
 
@@ -724,4 +724,5 @@ TG:[t.me/hfswcq](t.me/hfswcq)
 g++ -std=c++20 output\advanced_macro.i -o output\advanced_macro.exe
 .\output\advanced_macro.exe
 ```
+
 

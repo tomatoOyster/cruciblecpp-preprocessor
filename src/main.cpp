@@ -245,7 +245,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (arg == "--version") {
-            std::cout << "cruciblecpp-preprocessor 3.0.1\n";
+            std::cout << "cruciblecpp-preprocessor 3.1.0\n";
             return 0;
         }
         if (arg == "-o" || arg == "--output") {

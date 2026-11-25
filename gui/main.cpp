@@ -1043,7 +1043,7 @@ struct AppState {
         SelectObject(dc, subtitleFont);
         SetTextColor(dc, RGB(143, 211, 201));
         RECT subtitle{72, 44, client.right - 20, 66};
-        DrawTextW(dc, L"GCC 13 / 14 / 15  ·  Windows x64 preprocessor", -1,
+        DrawTextW(dc, L"GCC 13 / 14 / 15  ·  Windows x64  ·  v3.1.0", -1,
                   &subtitle, DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
 
         auto drawPanel = [&](const RECT& rect) {
