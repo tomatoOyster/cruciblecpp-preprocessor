@@ -37,6 +37,138 @@ constexpr COLORREF kText = RGB(7, 59, 58);
 constexpr COLORREF kMuted = RGB(76, 112, 109);
 constexpr COLORREF kBorder = RGB(204, 226, 222);
 constexpr COLORREF kDanger = RGB(176, 58, 58);
+constexpr wchar_t kAgreementText[] = LR"AGREEMENT(CrucibleCpp 用户协议
+
+协议版本：1.0
+生效日期：2026 年 11 月 26 日
+
+1. 协议适用与接受
+
+本协议适用于 CrucibleCpp 的命令行版本、Windows GUI、源代码、文档及相关发行文件（以下统称“本软件”）。
+
+下载、安装、复制、运行或以其他方式使用本软件，即表示你已阅读、理解并同意本协议。如果你不同意本协议，请停止使用并删除本软件。
+
+本协议是使用官方发行版的补充说明。本软件不同版本同时受其对应开源许可证约束；如本协议与该许可证存在冲突，以对应许可证为准。
+
+2. 定义
+
+开发者：CrucibleCpp 项目维护者。
+官方渠道：CrucibleCpp 的 GitHub 仓库、GitHub Releases 和 hfsdr.cn 官网。
+用户：下载、安装或使用本软件的个人或组织。
+商业使用：以营利、获取商业利益或商业运营为目的的使用，包括但不限于销售、付费分发、商业产品集成、付费服务、商业内部生产流程等。
+
+3. 许可证与版本
+
+V3.0.0 及以后：采用 CC BY-NC 4.0（署名—非商业性使用 4.0 国际）。
+V2.9.0 及以前：继续采用 MIT License，旧版本不会被追溯变更。
+
+不同版本的许可证文本以发行包中的 LICENSE、LICENSE-MIT 和 NOTICE 为准。
+
+4. 允许的使用
+
+在遵守对应许可证和本协议的前提下，你可以：
+
+1. 个人学习、研究、开发和测试；
+2. 在非商业项目中使用；
+3. 复制、修改源代码，但必须保留版权、许可证和免责声明；
+4. 在非商业范围内再分发原始或修改版本，并附上对应许可证；
+5. 将本软件用于开源项目、教学、竞赛、学术研究等非商业场景；
+6. 查看、修改和分发 GUI/CLI 源代码，但不得移除许可证和署名信息。
+
+再分发时，不得暗示开发者对你的修改版本提供背书或支持。
+
+5. 商业使用与商业授权
+
+未经开发者书面授权，不得将本软件用于商业用途，包括但不限于：
+
+销售本软件或其修改版本；
+将本软件打包进商业软件、硬件或服务；
+提供基于本软件的付费预处理、编译、咨询或托管服务；
+在企业商业生产流程中直接使用；
+以本软件为基础制作商业培训、商业课程或商业发行版。
+
+商业使用需要单独取得商业授权。商业授权范围、费用和支持方式由双方另行约定。
+
+6. 使用限制
+
+使用本软件时，你不得：
+
+1. 移除、隐藏或篡改版权声明、许可证、免责声明或作者标识；
+2. 将本软件用于违法、侵权、恶意软件或其他危害他人的活动；
+3. 冒充官方版本，或声称修改版本由开发者官方维护；
+4. 使用 CrucibleCpp 名称、标识或作者名义进行误导性宣传；
+5. 以违反适用法律或第三方许可证的方式使用本软件或其输出。
+
+7. 用户代码与输出文件
+
+你输入的源代码、头文件、宏定义、Include 路径以及生成的 .i、.exe 等输出文件，其权利仍归你或原权利人所有。
+
+开发者不对你的代码内容主张所有权。你需要自行确保：
+
+你有权处理相关代码和文件；
+你的使用不侵犯第三方权利；
+生成的输出符合你的项目许可证和法律规定；
+在编译、分发或运行输出文件前自行完成测试和备份。
+
+8. GCC 与第三方组件
+
+本软件依赖用户自行安装的 GCC 工具链。GCC、MinGW-w64 及其运行时组件受其各自许可证约束，不属于本协议授权范围。
+
+本软件不随包分发 GCC。你需要自行取得合法安装的 GCC，并遵守其许可证。不同 GCC 版本的预处理行为、头文件和编译结果可能不同，开发者不对第三方工具链的行为作出保证。
+
+9. 隐私与本地处理
+
+当前版本的 CLI 和 GUI 在本机执行预处理，不包含遥测、账号系统或代码上传功能。GUI 调用本机 GCC 进行预处理、对比和编译。
+
+如果你未来使用包含网络功能的版本，开发者会通过协议更新或单独说明告知数据处理方式。
+
+10. 无担保
+
+本软件按“现状”提供，不附带任何明示或默示担保，包括但不限于：
+
+适销性；
+特定用途适用性；
+不侵权；
+无错误或无中断运行；
+与特定 GCC 版本、项目或构建系统完全兼容。
+
+你需要自行评估本软件是否适合你的项目，并自行备份代码和构建产物。
+
+11. 责任限制
+
+在适用法律允许的最大范围内，开发者不对因使用或无法使用本软件而产生的任何直接、间接、偶然、特殊或后果性损失承担责任，包括但不限于：
+
+数据丢失；
+构建失败；
+项目延期；
+利润损失；
+第三方索赔；
+因 GCC 或用户代码导致的问题。
+
+本软件通常免费提供；在适用法律允许的范围内，开发者的累计责任不超过你为官方版本实际支付的费用。
+
+12. 协议变更与终止
+
+开发者可能随版本更新修改本协议。更新后的协议会在官方仓库或官网发布，并标注新的生效日期。
+
+如果你违反本协议，开发者可以终止你使用官方发行版和官方服务的许可。终止后，你应停止使用并删除相关副本。
+
+本协议终止后，第 7、8、10、11 和 13 条继续有效。
+
+13. 其他
+
+本协议部分条款被认定无效或不可执行时，不影响其他条款的效力。
+本协议与对应开源许可证共同构成你对官方发行版使用的完整约定。
+如果你需要商业授权、二次分发许可或其他例外安排，请通过项目仓库或官网联系开发者。
+
+14. 联系方式
+
+项目仓库：https://github.com/tomatoOyster/cruciblecpp-preprocessor
+官网：https://hfsdr.cn
+问题反馈：GitHub Issues
+商业授权：通过项目仓库或官网联系
+)AGREEMENT";
+
 
 enum ControlId : int {
     IDC_INPUT = 100,
@@ -346,6 +478,7 @@ struct AppState {
     crucible::PchPolicy pchPolicy = crucible::PchPolicy::Ignore;
     bool lineMarkers = true;
     bool keepComments = false;
+    bool agreementAccepted = false;
     bool running = false;
     int exitCode = 0;
     std::string resultOutput;
@@ -644,6 +777,7 @@ struct AppState {
     }
 
     void loadSettings() {
+        agreementAccepted = getIni(L"agreement", L"0") == L"1";
         // Source and output start empty by design; the user must choose them
         // explicitly for every new session.
         selectedInput.clear();
@@ -1521,6 +1655,117 @@ void AppState::showOptions() {
     showOptionsDialog(this);
 }
 
+struct AgreementState {
+    AppState* app = nullptr;
+    HWND window = nullptr;
+    bool accepted = false;
+};
+
+LRESULT CALLBACK AgreementProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+    auto* state = reinterpret_cast<AgreementState*>(GetWindowLongPtrW(window, GWLP_USERDATA));
+    if (!state) {
+        if (message == WM_NCCREATE) {
+            auto* create = reinterpret_cast<CREATESTRUCTW*>(lParam);
+            state = static_cast<AgreementState*>(create->lpCreateParams);
+            state->window = window;
+            SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(state));
+        } else {
+            return DefWindowProcW(window, message, wParam, lParam);
+        }
+    }
+    switch (message) {
+    case WM_CREATE: {
+        const DWORD labelStyle = WS_CHILD | WS_VISIBLE | SS_LEFT;
+        const DWORD editStyle = WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL |
+                                ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL;
+        HWND title = CreateWindowExW(0, L"STATIC", L"CrucibleCpp 用户协议",
+                                     labelStyle, 20, 16, 700, 28, window, nullptr,
+                                     state->app->instance, nullptr);
+        HWND edit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", kAgreementText,
+                                    editStyle, 20, 52, 720, 460, window,
+                                    reinterpret_cast<HMENU>(1001), state->app->instance,
+                                    nullptr);
+        HWND note = CreateWindowExW(0, L"STATIC",
+                                    L"点击“确定”后继续使用；关闭窗口将退出。",
+                                    labelStyle, 20, 524, 540, 22, window, nullptr,
+                                    state->app->instance, nullptr);
+        HWND ok = CreateWindowExW(0, L"BUTTON", L"确定",
+                                  WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+                                  620, 520, 120, 30, window,
+                                  reinterpret_cast<HMENU>(IDOK), state->app->instance,
+                                  nullptr);
+        SendMessageW(title, WM_SETFONT, reinterpret_cast<WPARAM>(state->app->titleFont), TRUE);
+        SendMessageW(edit, WM_SETFONT, reinterpret_cast<WPARAM>(state->app->uiFont), TRUE);
+        SendMessageW(note, WM_SETFONT, reinterpret_cast<WPARAM>(state->app->uiFont), TRUE);
+        SendMessageW(ok, WM_SETFONT, reinterpret_cast<WPARAM>(state->app->uiFont), TRUE);
+        SetFocus(edit);
+        return 0;
+    }
+    case WM_COMMAND:
+        if (LOWORD(wParam) == IDOK) {
+            state->accepted = true;
+            state->app->putIni(L"agreement", L"1");
+            DestroyWindow(window);
+            return 0;
+        }
+        if (LOWORD(wParam) == IDCANCEL) {
+            DestroyWindow(window);
+            return 0;
+        }
+        break;
+    case WM_CLOSE:
+        DestroyWindow(window);
+        return 0;
+    case WM_NCDESTROY:
+        SetWindowLongPtrW(window, GWLP_USERDATA, 0);
+        return 0;
+    }
+    return DefWindowProcW(window, message, wParam, lParam);
+}
+
+bool showAgreementDialog(AppState* app) {
+    static bool registered = false;
+    if (!registered) {
+        WNDCLASSEXW windowClass{};
+        windowClass.cbSize = sizeof(windowClass);
+        windowClass.lpfnWndProc = AgreementProc;
+        windowClass.hInstance = app->instance;
+        windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+        windowClass.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+        windowClass.lpszClassName = L"CrucibleCppAgreementWindow";
+        if (!RegisterClassExW(&windowClass)) return false;
+        registered = true;
+    }
+    AgreementState state;
+    state.app = app;
+    RECT parent{};
+    GetWindowRect(app->window, &parent);
+    const int width = 780;
+    const int height = 610;
+    EnableWindow(app->window, FALSE);
+    HWND dialog = CreateWindowExW(
+        WS_EX_DLGMODALFRAME, L"CrucibleCppAgreementWindow",
+        L"CrucibleCpp 用户协议",
+        WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_VISIBLE,
+        parent.left + 40, parent.top + 40, width, height,
+        app->window, nullptr, app->instance, &state);
+    if (!dialog) {
+        EnableWindow(app->window, TRUE);
+        return false;
+    }
+    UpdateWindow(dialog);
+    MSG message{};
+    while (IsWindow(dialog) && GetMessageW(&message, nullptr, 0, 0)) {
+        if (!IsDialogMessageW(dialog, &message)) {
+            TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+    }
+    EnableWindow(app->window, TRUE);
+    SetForegroundWindow(app->window);
+    return state.accepted;
+}
+
 AppState* stateFrom(HWND window) {
     return reinterpret_cast<AppState*>(GetWindowLongPtrW(window, GWLP_USERDATA));
 }
@@ -1626,6 +1871,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
     GetClientRect(window, &client);
     SendMessageW(window, WM_SIZE, 0,
                  MAKELPARAM(client.right - client.left, client.bottom - client.top));
+
+    if (!state.agreementAccepted) {
+        if (!showAgreementDialog(&state)) {
+            DestroyWindow(window);
+            return 0;
+        }
+    }
 
     state.applyCommandLine();
     RECT client2{};
