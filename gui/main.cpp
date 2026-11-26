@@ -914,6 +914,7 @@ struct AppState {
         } else {
             ShowWindow(compareGcc, SW_HIDE);
         }
+        if (window) layoutForWindow();
     }
 
     void fetchAnnouncement() {
@@ -1009,13 +1010,22 @@ struct AppState {
                    buttonWidth + 10, 27, TRUE);
         y += row;
         MoveWindow(standard, editX, y, 108, 200, TRUE);
-        MoveWindow(run, editX + 110, y, 62, 29, TRUE);
-        MoveWindow(cancel, editX + 178, y, 48, 29, TRUE);
-        MoveWindow(compareGcc, editX + 232, y, 100, 29, TRUE);
-        MoveWindow(compileOutput, editX + 338, y, 58, 29, TRUE);
-        MoveWindow(options, editX + 402, y, 46, 29, TRUE);
-        MoveWindow(copyCli, editX + 454, y, 76, 29, TRUE);
-        MoveWindow(settingsButton, editX + 536, y, 58, 29, TRUE);
+        int actionX = editX + 110;
+        MoveWindow(run, actionX, y, 62, 29, TRUE);
+        actionX += 68;
+        MoveWindow(cancel, actionX, y, 48, 29, TRUE);
+        actionX += 54;
+        if (enableCompareGcc) {
+            MoveWindow(compareGcc, actionX, y, 100, 29, TRUE);
+            actionX += 106;
+        }
+        MoveWindow(compileOutput, actionX, y, 58, 29, TRUE);
+        actionX += 64;
+        MoveWindow(options, actionX, y, 46, 29, TRUE);
+        actionX += 52;
+        MoveWindow(copyCli, actionX, y, 76, 29, TRUE);
+        actionX += 82;
+        MoveWindow(settingsButton, actionX, y, 58, 29, TRUE);
         if (announcementVisible) {
             MoveWindow(announcementBanner, margin, 80, width - 2 * margin, 104, TRUE);
             ShowWindow(announcementBanner, SW_SHOW);
