@@ -608,6 +608,7 @@ struct AppState {
     HFONT subtitleFont = nullptr;
     HFONT announcementTitleFont = nullptr;
     HFONT announcementBodyFont = nullptr;
+    HFONT announcementCloseFont = nullptr;
     HFONT codeFont = nullptr;
     HBRUSH backgroundBrush = nullptr;
     HBRUSH panelBrush = nullptr;
@@ -831,19 +832,38 @@ struct AppState {
             DrawTextW(dc, announcementLinkText.c_str(), -1, &link,
                       DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
         }
-        SelectObject(dc, announcementTitleFont);
-        SetTextColor(dc, kMuted);
-        RECT close{client.right - 34, 8, client.right - 8, 32};
-        DrawTextW(dc, L"×", -1, &close, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
+        // Large circular close affordance; drawn geometrically so it stays
+        // legible at every DPI instead of depending on a glyph metric.
+        const int closeX = client.right - 28;
+        const int closeY = 28;
+        HBRUSH closeFill = CreateSolidBrush(kAccentSoft);
+        HPEN closePen = CreatePen(PS_NULL, 0, kAccentSoft);
+        HGDIOBJ oldCloseBrush = SelectObject(dc, closeFill);
+        HGDIOBJ oldClosePen = SelectObject(dc, closePen);
+        Ellipse(dc, closeX - 19, closeY - 19, closeX + 19, closeY + 19);
+        SelectObject(dc, oldCloseBrush);
+        SelectObject(dc, oldClosePen);
+        DeleteObject(closeFill);
+        DeleteObject(closePen);
+        HPEN crossPen = CreatePen(PS_SOLID, 2, kMuted);
+        HGDIOBJ oldCrossPen = SelectObject(dc, crossPen);
+        MoveToEx(dc, closeX - 8, closeY - 8, nullptr);
+        LineTo(dc, closeX + 8, closeY + 8);
+        MoveToEx(dc, closeX + 8, closeY - 8, nullptr);
+        LineTo(dc, closeX - 8, closeY + 8);
+        SelectObject(dc, oldCrossPen);
+        DeleteObject(crossPen);
+        SelectObject(dc, announcementBodyFont);
+        SetTextColor(dc, kAccent);
+        RECT expand{client.right - 218, 74, client.right - 50, 102};
+        DrawTextW(dc, L"展开全屏", -1, &expand,
+                  DT_RIGHT | DT_SINGLELINE | DT_VCENTER);
     }
 
     void dismissAnnouncement() {
         announcementVisible = false;
         announcementHeight = 0;
         ShowWindow(announcementBanner, SW_HIDE);
-        if (!announcement.id.empty()) {
-            putIni(L"announcementDismissed", utf8ToWide(announcement.id));
-        }
         layoutForWindow();
         InvalidateRect(window, nullptr, TRUE);
     }
@@ -862,11 +882,16 @@ struct AppState {
     void clickAnnouncement(int x, int y) {
         RECT client{};
         GetClientRect(announcementBanner, &client);
-        if (x >= client.right - 38 && x <= client.right - 4 && y >= 4 && y <= 36) {
+        if (x >= client.right - 52 && x <= client.right - 2 && y >= 2 && y <= 48) {
             dismissAnnouncement();
             return;
         }
-        if (!announcementLink.empty() && x >= 40 && x <= client.right - 40 &&
+        if (x >= client.right - 220 && x <= client.right - 46 &&
+            y >= 70 && y <= 104) {
+            openAnnouncementFullscreen();
+            return;
+        }
+        if (!announcementLink.empty() && x >= 40 && x <= client.right - 230 &&
             y >= 72 && y <= 102) {
             ShellExecuteW(window, L"open", announcementLink.c_str(), nullptr, nullptr,
                           SW_SHOWNORMAL);
@@ -888,11 +913,49 @@ struct AppState {
             announcement.body.empty()) {
             return;
         }
-        if (!announcement.id.empty() &&
-            getIni(L"announcementDismissed") == utf8ToWide(announcement.id)) {
-            return;
-        }
         showAnnouncement();
+    }
+
+    void paintAnnouncementFullscreen(HDC dc, HWND target) {
+        RECT screen{};
+        GetClientRect(target, &screen);
+        FillRect(dc, &screen, backgroundBrush);
+        RECT header{0, 0, screen.right, 96};
+        HBRUSH headerBrush = CreateSolidBrush(kHeader);
+        FillRect(dc, &header, headerBrush);
+        DeleteObject(headerBrush);
+        HBRUSH mark = CreateSolidBrush(kAccent);
+        HPEN noPen = CreatePen(PS_NULL, 0, kAccent);
+        HGDIOBJ oldBrush = SelectObject(dc, mark);
+        HGDIOBJ oldPen = SelectObject(dc, noPen);
+        Ellipse(dc, 48, 26, 88, 66);
+        SelectObject(dc, oldBrush);
+        SelectObject(dc, oldPen);
+        DeleteObject(noPen);
+        DeleteObject(mark);
+        SetBkMode(dc, TRANSPARENT);
+        SelectObject(dc, titleFont);
+        SetTextColor(dc, RGB(235, 255, 251));
+        RECT brand{104, 18, screen.right - 40, 56};
+        DrawTextW(dc, L"CrucibleCpp 公告", -1, &brand,
+                  DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+        SelectObject(dc, subtitleFont);
+        SetTextColor(dc, RGB(143, 211, 201));
+        RECT sub{106, 56, screen.right - 40, 78};
+        DrawTextW(dc, L"Announcement", -1, &sub,
+                  DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+        const int cardWidth = std::min(1200, std::max(400, static_cast<int>(screen.right) - 120));
+        const int cardLeft = (screen.right - cardWidth) / 2;
+        RECT card{cardLeft, 118, cardLeft + cardWidth, screen.bottom - 40};
+        HBRUSH cardBrush = CreateSolidBrush(kPanel);
+        HPEN border = CreatePen(PS_SOLID, 1, kBorder);
+        HGDIOBJ oldB = SelectObject(dc, cardBrush);
+        HGDIOBJ oldP = SelectObject(dc, border);
+        RoundRect(dc, card.left, card.top, card.right, card.bottom, 16, 16);
+        SelectObject(dc, oldB);
+        SelectObject(dc, oldP);
+        DeleteObject(cardBrush);
+        DeleteObject(border);
     }
 
     void layout(int width, int height) {
@@ -1036,6 +1099,7 @@ struct AppState {
     }
 
     void showOptions();
+    void openAnnouncementFullscreen();
 
     std::filesystem::path settingsPath() const {
         wchar_t appData[MAX_PATH * 2]{};
@@ -1734,6 +1798,7 @@ struct AppState {
             if (subtitleFont) DeleteObject(subtitleFont);
             if (announcementTitleFont) DeleteObject(announcementTitleFont);
             if (announcementBodyFont) DeleteObject(announcementBodyFont);
+            if (announcementCloseFont) DeleteObject(announcementCloseFont);
             if (codeFont) DeleteObject(codeFont);
             if (backgroundBrush) DeleteObject(backgroundBrush);
             if (panelBrush) DeleteObject(panelBrush);
@@ -2132,12 +2197,13 @@ LRESULT CALLBACK AnnouncementBannerProc(HWND window, UINT message, WPARAM wParam
         ScreenToClient(window, &point);
         RECT client{};
         GetClientRect(window, &client);
-        const bool overClose = point.x >= client.right - 38 &&
-                               point.y <= 36;
+        const bool overClose = point.x >= client.right - 52 && point.y <= 48;
+        const bool overExpand = point.x >= client.right - 220 && point.x <= client.right - 46 &&
+                                point.y >= 70 && point.y <= 104;
         const bool overLink = !app->announcement.link.empty() &&
-                              point.x >= 40 && point.x <= client.right - 40 &&
+                              point.x >= 40 && point.x <= client.right - 230 &&
                               point.y >= 72 && point.y <= 102;
-        if (overClose || overLink) {
+        if (overClose || overExpand || overLink) {
             SetCursor(LoadCursorW(nullptr, IDC_HAND));
             return TRUE;
         }
@@ -2145,6 +2211,170 @@ LRESULT CALLBACK AnnouncementBannerProc(HWND window, UINT message, WPARAM wParam
     }
     }
     return DefWindowProcW(window, message, wParam, lParam);
+}
+
+struct AnnouncementFullscreenState {
+    AppState* app = nullptr;
+    HWND window = nullptr;
+    HWND title = nullptr;
+    HWND body = nullptr;
+    HWND close = nullptr;
+    HWND link = nullptr;
+};
+
+LRESULT CALLBACK AnnouncementFullscreenProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+    auto* state = reinterpret_cast<AnnouncementFullscreenState*>(
+        GetWindowLongPtrW(window, GWLP_USERDATA));
+    if (!state) {
+        if (message == WM_NCCREATE) {
+            auto* create = reinterpret_cast<CREATESTRUCTW*>(lParam);
+            state = static_cast<AnnouncementFullscreenState*>(create->lpCreateParams);
+            state->window = window;
+            SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(state));
+        } else {
+            return DefWindowProcW(window, message, wParam, lParam);
+        }
+    }
+    switch (message) {
+    case WM_CREATE: {
+        state->title = CreateWindowExW(0, L"STATIC", utf8ToWide(state->app->announcement.title).c_str(),
+                                       WS_CHILD | WS_VISIBLE | SS_LEFT,
+                                       90, 138, 800, 48, window, nullptr,
+                                       state->app->instance, nullptr);
+        SendMessageW(state->title, WM_SETFONT,
+                     reinterpret_cast<WPARAM>(state->app->titleFont), TRUE);
+        state->body = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT",
+                                      editMultiline(utf8ToWide(state->app->announcement.body)).c_str(),
+                                      WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL |
+                                          ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL,
+                                      90, 198, 800, 400, window,
+                                      reinterpret_cast<HMENU>(2001), state->app->instance,
+                                      nullptr);
+        SendMessageW(state->body, WM_SETFONT,
+                     reinterpret_cast<WPARAM>(state->app->uiFont), TRUE);
+        state->link = CreateWindowExW(0, L"BUTTON",
+                                      state->app->announcementLinkText.c_str(),
+                                      WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+                                      90, 500, 160, 38, window,
+                                      reinterpret_cast<HMENU>(2002), state->app->instance,
+                                      nullptr);
+        state->close = CreateWindowExW(0, L"BUTTON", L"关闭",
+                                       WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+                                       760, 500, 132, 38, window,
+                                       reinterpret_cast<HMENU>(IDCANCEL), state->app->instance,
+                                       nullptr);
+        SendMessageW(state->link, WM_SETFONT,
+                     reinterpret_cast<WPARAM>(state->app->uiFont), TRUE);
+        SendMessageW(state->close, WM_SETFONT,
+                     reinterpret_cast<WPARAM>(state->app->uiFont), TRUE);
+        if (state->app->announcementLink.empty()) {
+            ShowWindow(state->link, SW_HIDE);
+        }
+        RECT client{};
+        GetClientRect(window, &client);
+        SendMessageW(window, WM_SIZE, 0,
+                     MAKELPARAM(client.right - client.left, client.bottom - client.top));
+        return 0;
+    }
+    case WM_SIZE: {
+        const int width = LOWORD(lParam);
+        const int height = HIWORD(lParam);
+        if (width <= 0 || height <= 0 || !state->title) return 0;
+        const int cardWidth = std::min(1200, std::max(400, width - 120));
+        const int cardLeft = (width - cardWidth) / 2;
+        MoveWindow(state->title, cardLeft + 50, 136, cardWidth - 100, 52, TRUE);
+        const int buttonY = height - 82;
+        MoveWindow(state->body, cardLeft + 50, 198, cardWidth - 100,
+                   std::max(100, buttonY - 210), TRUE);
+        MoveWindow(state->link, cardLeft + 50, buttonY, 170, 40, TRUE);
+        MoveWindow(state->close, cardLeft + cardWidth - 182, buttonY, 132, 40, TRUE);
+        return 0;
+    }
+    case WM_ERASEBKGND:
+        return 1;
+    case WM_PAINT: {
+        PAINTSTRUCT paint{};
+        HDC dc = BeginPaint(window, &paint);
+        state->app->paintAnnouncementFullscreen(dc, window);
+        EndPaint(window, &paint);
+        return 0;
+    }
+    case WM_CTLCOLORSTATIC: {
+        HDC dc = reinterpret_cast<HDC>(wParam);
+        SetBkMode(dc, OPAQUE);
+        SetBkColor(dc, kPanel);
+        SetTextColor(dc, kText);
+        return reinterpret_cast<LRESULT>(state->app->panelBrush);
+    }
+    case WM_COMMAND:
+        if (LOWORD(wParam) == IDCANCEL) {
+            DestroyWindow(window);
+            return 0;
+        }
+        if (LOWORD(wParam) == 2002 && !state->app->announcementLink.empty()) {
+            ShellExecuteW(window, L"open", state->app->announcementLink.c_str(),
+                          nullptr, nullptr, SW_SHOWNORMAL);
+            return 0;
+        }
+        break;
+    case WM_KEYDOWN:
+        if (wParam == VK_ESCAPE) {
+            DestroyWindow(window);
+            return 0;
+        }
+        break;
+    case WM_CLOSE:
+        DestroyWindow(window);
+        return 0;
+    case WM_NCDESTROY:
+        SetWindowLongPtrW(window, GWLP_USERDATA, 0);
+        return 0;
+    }
+    return DefWindowProcW(window, message, wParam, lParam);
+}
+
+void showAnnouncementFullscreen(AppState* app) {
+    static bool registered = false;
+    if (!registered) {
+        WNDCLASSEXW windowClass{};
+        windowClass.cbSize = sizeof(windowClass);
+        windowClass.lpfnWndProc = AnnouncementFullscreenProc;
+        windowClass.hInstance = app->instance;
+        windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+        windowClass.hbrBackground = app->backgroundBrush;
+        windowClass.lpszClassName = L"CrucibleCppAnnouncementFullscreen";
+        if (!RegisterClassExW(&windowClass)) return;
+        registered = true;
+    }
+    AnnouncementFullscreenState state;
+    state.app = app;
+    RECT work{};
+    SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
+    const int width = std::max(480, static_cast<int>(work.right - work.left));
+    const int height = std::max(360, static_cast<int>(work.bottom - work.top));
+    EnableWindow(app->window, FALSE);
+    HWND dialog = CreateWindowExW(
+        WS_EX_TOPMOST, L"CrucibleCppAnnouncementFullscreen", L"CrucibleCpp 公告",
+        WS_POPUP | WS_VISIBLE, work.left, work.top, width, height,
+        app->window, nullptr, app->instance, &state);
+    if (!dialog) {
+        EnableWindow(app->window, TRUE);
+        return;
+    }
+    UpdateWindow(dialog);
+    MSG message{};
+    while (IsWindow(dialog) && GetMessageW(&message, nullptr, 0, 0)) {
+        if (!IsDialogMessageW(dialog, &message)) {
+            TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+    }
+    EnableWindow(app->window, TRUE);
+    SetForegroundWindow(app->window);
+}
+
+void AppState::openAnnouncementFullscreen() {
+    showAnnouncementFullscreen(this);
 }
 
 AppState* stateFrom(HWND window) {
@@ -2211,6 +2441,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
                                              DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
                                              CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
                                              DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+    state.announcementCloseFont = CreateFontW(-36, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                                              DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+                                              CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                                              DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
     state.codeFont = CreateFontW(-15, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
                                  DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
                                  CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
