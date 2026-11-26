@@ -3121,11 +3121,6 @@ LRESULT CALLBACK SettingsProc(HWND window, UINT message, WPARAM wParam, LPARAM l
                                          static_cast<int>(work.bottom - work.top) - 40);
             SetWindowPos(window, nullptr, 0, 0, 850, desired,
                          SWP_NOMOVE | SWP_NOZORDER);
-            if (state->colorOpen) {
-                startColorPickMode(state->app);
-                SetWindowTextW(state->colorMode, L"取色中（右键结束）");
-                SetWindowTextW(state->colorStatus, L"悬停正式界面中的块，点击选择；Ctrl 多选，右键结束。");
-            }
             return 0;
         }
         if (LOWORD(wParam) == 4007) {
