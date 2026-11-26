@@ -674,6 +674,7 @@ void selectColorRegion(AppState* app, POINT point, bool ctrl);
 void paintColorOverlay(AppState* app, HDC dc);
 void syncPickerFromSelection(AppState* app);
 void applyPickerColor(AppState* app);
+bool scheduleCacheReset(std::wstring& errorText);
 LRESULT CALLBACK ColorOverlayProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
 struct SettingsState;
@@ -3199,29 +3200,15 @@ LRESULT CALLBACK SettingsProc(HWND window, UINT message, WPARAM wParam, LPARAM l
                             MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES) {
                 return 0;
             }
-            const std::filesystem::path directory =
-                state->app->settingsPath().parent_path();
-            const std::wstring settingsFile = state->app->settingsPath().wstring();
-            WritePrivateProfileStringW(nullptr, nullptr, nullptr,
-                                       settingsFile.c_str());
-            std::error_code error;
-            for (int attempt = 0; attempt < 6; ++attempt) {
-                error.clear();
-                std::filesystem::remove_all(directory, error);
-                if (!error) break;
-                Sleep(80);
-            }
-            if (error) {
-                std::wstring message =
-                    L"删除本地缓存失败：\n" + directory.wstring() +
-                    L"\n\n请关闭其他 CrucibleCpp 实例后重试。\n错误：" +
-                    utf8ToWide(error.message());
-                MessageBoxW(window, message.c_str(),
-                            L"重置本地缓存", MB_OK | MB_ICONERROR);
+            std::wstring errorText;
+            if (!scheduleCacheReset(errorText)) {
+                MessageBoxW(window, errorText.c_str(), L"重置本地缓存",
+                            MB_OK | MB_ICONERROR);
                 return 0;
             }
             state->app->skipSaveOnExit = true;
-            MessageBoxW(window, L"本地缓存已清空，软件将退出。",
+            MessageBoxW(window,
+                        L"本地缓存将在下次启动时清空。\n软件现在将退出。",
                         L"重置本地缓存", MB_OK | MB_ICONINFORMATION);
             ExitProcess(0);
         }
@@ -3576,6 +3563,60 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
 
 } // namespace
 
+namespace {
+
+std::filesystem::path appDataConfigDirectory() {
+    wchar_t buffer[MAX_PATH * 2]{};
+    const DWORD length = GetEnvironmentVariableW(L"APPDATA", buffer,
+                                                 static_cast<DWORD>(std::size(buffer)));
+    std::filesystem::path base = length > 0 ? std::filesystem::path(buffer)
+                                            : std::filesystem::path(L".");
+    return base / L"CrucibleCpp";
+}
+
+std::filesystem::path cacheResetMarker() {
+    wchar_t buffer[MAX_PATH * 2]{};
+    const DWORD length = GetTempPathW(static_cast<DWORD>(std::size(buffer)), buffer);
+    std::filesystem::path base = length > 0 ? std::filesystem::path(buffer)
+                                            : std::filesystem::path(L".");
+    return base / L"CrucibleCpp-reset.flag";
+}
+
+bool scheduleCacheReset(std::wstring& errorText) {
+    std::ofstream marker(cacheResetMarker(), std::ios::binary | std::ios::trunc);
+    if (!marker) {
+        errorText = L"无法创建重置标记文件。";
+        return false;
+    }
+    marker << "reset";
+    marker.close();
+    return true;
+}
+
+bool performPendingCacheReset(std::wstring& errorText) {
+    const std::filesystem::path marker = cacheResetMarker();
+    if (!std::filesystem::exists(marker)) return true;
+    std::error_code error;
+    const std::filesystem::path directory = appDataConfigDirectory();
+    for (int attempt = 0; attempt < 12; ++attempt) {
+        error.clear();
+        std::filesystem::remove_all(directory, error);
+        if (!error) break;
+        Sleep(150);
+    }
+    if (error) {
+        errorText = L"删除本地缓存失败：\n" + directory.wstring() +
+                    L"\n\n错误：" + utf8ToWide(error.message()) +
+                    L"\n请关闭杀毒软件对配置目录的占用后重新启动。";
+        return false;
+    }
+    error.clear();
+    std::filesystem::remove(marker, error);
+    return true;
+}
+
+} // namespace
+
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
     HANDLE instanceMutex = CreateMutexW(nullptr, TRUE,
                                         L"Local\\CrucibleCppGuiSingleInstance");
@@ -3584,6 +3625,15 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
                     L"CrucibleCpp GUI", MB_OK | MB_ICONINFORMATION);
         if (instanceMutex) CloseHandle(instanceMutex);
         return 0;
+    }
+    {
+        std::wstring resetError;
+        if (!performPendingCacheReset(resetError)) {
+            MessageBoxW(nullptr, resetError.c_str(), L"重置本地缓存",
+                        MB_OK | MB_ICONERROR);
+            if (instanceMutex) CloseHandle(instanceMutex);
+            return 1;
+        }
     }
     // Prefer per-monitor v2; otherwise Windows virtualizes GetClientRect on
     // high-DPI displays and the layout no longer matches the real window.
