@@ -3330,16 +3330,20 @@ void startColorPickMode(AppState* app) {
     POINT origin{client.left, client.top};
     ClientToScreen(app->window, &origin);
     if (!app->colorOverlay) {
+        WNDCLASSEXW overlayClass{};
+        overlayClass.cbSize = sizeof(overlayClass);
+        overlayClass.lpfnWndProc = ColorOverlayProc;
+        overlayClass.hInstance = app->instance;
+        overlayClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+        overlayClass.hbrBackground = nullptr;
+        overlayClass.lpszClassName = L"CrucibleCppColorOverlay";
+        RegisterClassExW(&overlayClass);
         app->colorOverlay = CreateWindowExW(
-            WS_EX_LAYERED | WS_EX_TOOLWINDOW,
-            L"STATIC", L"", WS_POPUP | WS_VISIBLE,
+            WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+            L"CrucibleCppColorOverlay", L"", WS_POPUP | WS_VISIBLE,
             origin.x, origin.y, client.right - client.left, client.bottom - client.top,
-            nullptr, nullptr, app->instance, nullptr);
+            nullptr, nullptr, app->instance, app);
         if (!app->colorOverlay) return;
-        SetWindowLongPtrW(app->colorOverlay, GWLP_WNDPROC,
-                          reinterpret_cast<LONG_PTR>(ColorOverlayProc));
-        SetWindowLongPtrW(app->colorOverlay, GWLP_USERDATA,
-                          reinterpret_cast<LONG_PTR>(app));
         SetLayeredWindowAttributes(app->colorOverlay, RGB(255, 0, 255), 0,
                                    LWA_COLORKEY);
     }
@@ -3456,7 +3460,7 @@ LRESULT CALLBACK ColorOverlayProc(HWND window, UINT message, WPARAM wParam, LPAR
             app = static_cast<AppState*>(create->lpCreateParams);
             SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(app));
         } else {
-            return DefWindowProcW(window, message, 0, 0);
+            return DefWindowProcW(window, message, wParam, lParam);
         }
     }
     switch (message) {
@@ -3487,7 +3491,7 @@ LRESULT CALLBACK ColorOverlayProc(HWND window, UINT message, WPARAM wParam, LPAR
         stopColorPickMode(app);
         return 0;
     }
-    return DefWindowProcW(window, message, 0, 0);
+    return DefWindowProcW(window, message, wParam, lParam);
 }
 
 AppState* stateFrom(HWND window) {
