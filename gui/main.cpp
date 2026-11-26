@@ -674,12 +674,10 @@ void selectColorRegion(AppState* app, POINT point, bool ctrl);
 void paintColorOverlay(AppState* app, HDC dc);
 void syncPickerFromSelection(AppState* app);
 void applyPickerColor(AppState* app);
-bool scheduleCacheReset(std::wstring& errorText);
+bool startCacheCleanupHelper(std::wstring& errorText);
 LRESULT CALLBACK ColorOverlayProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
 constexpr wchar_t kAppearanceRegistryKey[] = L"Software\\CrucibleCpp\\Appearance";
-constexpr wchar_t kResetRegistryKey[] = L"Software\\CrucibleCppReset";
-constexpr wchar_t kResetValue[] = L"PendingCacheReset";
 
 struct SettingsState;
 
@@ -3268,17 +3266,15 @@ LRESULT CALLBACK SettingsProc(HWND window, UINT message, WPARAM wParam, LPARAM l
                             MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES) {
                 return 0;
             }
-            RegDeleteTreeW(HKEY_CURRENT_USER,
-                           L"Software\\CrucibleCpp");
             std::wstring errorText;
-            if (!scheduleCacheReset(errorText)) {
+            if (!startCacheCleanupHelper(errorText)) {
                 MessageBoxW(window, errorText.c_str(), L"重置本地缓存",
                             MB_OK | MB_ICONERROR);
                 return 0;
             }
             state->app->skipSaveOnExit = true;
             MessageBoxW(window,
-                        L"本地缓存将在下次启动时清空。\n软件现在将退出。",
+                        L"软件将退出，随后自动清空本地缓存。",
                         L"重置本地缓存", MB_OK | MB_ICONINFORMATION);
             ExitProcess(0);
         }
@@ -3644,92 +3640,77 @@ std::filesystem::path appDataConfigDirectory() {
     return base / L"CrucibleCpp";
 }
 
-bool scheduleCacheReset(std::wstring& errorText) {
-    HKEY key = nullptr;
-    LONG result = RegCreateKeyExW(HKEY_CURRENT_USER, kResetRegistryKey, 0,
-                                  nullptr, 0, KEY_WRITE, nullptr, &key,
-                                  nullptr);
-    if (result != ERROR_SUCCESS) {
-        errorText = L"无法创建重置标记（注册表错误 " +
-                    std::to_wstring(result) + L"）。";
+bool startCacheCleanupHelper(std::wstring& errorText) {
+    wchar_t module[MAX_PATH * 2]{};
+    const DWORD length = GetModuleFileNameW(nullptr, module,
+                                            static_cast<DWORD>(std::size(module)));
+    if (length == 0) {
+        errorText = L"无法获取程序路径。";
         return false;
     }
-    const DWORD enabled = 1;
-    result = RegSetValueExW(key, kResetValue, 0, REG_DWORD,
-                            reinterpret_cast<const BYTE*>(&enabled),
-                            sizeof(enabled));
-    RegCloseKey(key);
-    if (result != ERROR_SUCCESS) {
-        errorText = L"无法写入重置标记（注册表错误 " +
-                    std::to_wstring(result) + L"）。";
+    std::wstring command = L"\"" + std::wstring(module) + L"\" --purge-cache " +
+                           std::to_wstring(GetCurrentProcessId());
+    std::vector<wchar_t> mutableCommand(command.begin(), command.end());
+    mutableCommand.push_back(L'\0');
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+    PROCESS_INFORMATION process{};
+    if (!CreateProcessW(module, mutableCommand.data(), nullptr, nullptr, FALSE,
+                        CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process)) {
+        errorText = L"无法启动缓存清理进程（错误 " +
+                    std::to_wstring(GetLastError()) + L"）。";
         return false;
     }
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
     return true;
 }
 
-bool hasPendingCacheReset() {
-    HKEY key = nullptr;
-    if (RegOpenKeyExW(HKEY_CURRENT_USER, kResetRegistryKey, 0,
-                      KEY_QUERY_VALUE, &key) != ERROR_SUCCESS) {
-        return false;
+int runCacheCleanupHelper() {
+    const std::wstring commandLine = GetCommandLineW();
+    const std::size_t marker = commandLine.find(L"--purge-cache");
+    if (marker == std::wstring::npos) return 0;
+    DWORD parentPid = 0;
+    const std::size_t numberStart = commandLine.find_first_of(L"0123456789",
+                                                              marker + 13);
+    if (numberStart != std::wstring::npos) {
+        parentPid = static_cast<DWORD>(wcstoul(commandLine.c_str() + numberStart,
+                                               nullptr, 10));
     }
-    DWORD value = 0;
-    DWORD size = sizeof(value);
-    DWORD type = 0;
-    const LONG result = RegQueryValueExW(key, kResetValue, nullptr, &type,
-                                         reinterpret_cast<BYTE*>(&value),
-                                         &size);
-    RegCloseKey(key);
-    return result == ERROR_SUCCESS && type == REG_DWORD && value != 0;
-}
-
-bool clearPendingCacheReset() {
-    HKEY key = nullptr;
-    if (RegOpenKeyExW(HKEY_CURRENT_USER, kResetRegistryKey, 0,
-                      KEY_SET_VALUE, &key) != ERROR_SUCCESS) {
-        return false;
+    if (parentPid != 0) {
+        HANDLE parent = OpenProcess(SYNCHRONIZE, FALSE, parentPid);
+        if (parent) {
+            WaitForSingleObject(parent, 60000);
+            CloseHandle(parent);
+        } else {
+            Sleep(1000);
+        }
     }
-    const LONG result = RegDeleteValueW(key, kResetValue);
-    RegCloseKey(key);
-    return result == ERROR_SUCCESS || result == ERROR_FILE_NOT_FOUND;
-}
 
-bool performPendingCacheReset(std::wstring& errorText) {
-    if (!hasPendingCacheReset()) return true;
-    std::error_code error;
     const std::filesystem::path directory = appDataConfigDirectory();
-    for (int attempt = 0; attempt < 12; ++attempt) {
+    std::error_code error;
+    for (int attempt = 0; attempt < 40; ++attempt) {
         error.clear();
         std::filesystem::remove_all(directory, error);
         if (!error) break;
-        Sleep(150);
+        Sleep(250);
     }
+    RegDeleteTreeW(HKEY_CURRENT_USER, L"Software\\\\CrucibleCpp");
     if (error) {
-        errorText = L"删除本地缓存失败：\n" + directory.wstring() +
-                    L"\n\n错误：" + utf8ToWide(error.message()) +
-                    L"\n标记已保留，下次启动会继续尝试。";
-        return false;
+        std::wstring message = L"缓存清理失败：\\n" + directory.wstring() +
+                               L"\\n\\n错误：" + utf8ToWide(error.message());
+        MessageBoxW(nullptr, message.c_str(), L"重置本地缓存",
+                    MB_OK | MB_ICONERROR);
+        return 1;
     }
-    if (!clearPendingCacheReset()) {
-        errorText = L"本地缓存已删除，但无法清除重置标记。\n"
-                    L"下次启动可能会再清理一次。";
-        return false;
-    }
-    return true;
+    return 0;
 }
 
 } // namespace
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
-    {
-        std::wstring resetError;
-        if (!performPendingCacheReset(resetError)) {
-            // Do not brick startup because the old cache is locked. Keep the
-            // registry marker so the next launch retries, but let the user
-            // open the application with the current configuration.
-            MessageBoxW(nullptr, resetError.c_str(), L"重置本地缓存",
-                        MB_OK | MB_ICONWARNING);
-        }
+    if (std::wstring(GetCommandLineW()).find(L"--purge-cache") != std::wstring::npos) {
+        return runCacheCleanupHelper();
     }
     // Prefer per-monitor v2; otherwise Windows virtualizes GetClientRect on
     // high-DPI displays and the layout no longer matches the real window.
