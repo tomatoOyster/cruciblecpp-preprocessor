@@ -1473,7 +1473,7 @@ struct AppState {
     void saveAppearanceToRegistry() const {
         HKEY key = nullptr;
         if (RegCreateKeyExW(HKEY_CURRENT_USER, kAppearanceRegistryKey, 0, nullptr, 0,
-                            KEY_SET_VALUE | KEY_QUERY_VALUE, nullptr, &key,
+                            KEY_WRITE | KEY_QUERY_VALUE, nullptr, &key,
                             nullptr) != ERROR_SUCCESS) {
             return;
         }
@@ -3647,7 +3647,7 @@ std::filesystem::path appDataConfigDirectory() {
 bool scheduleCacheReset(std::wstring& errorText) {
     HKEY key = nullptr;
     LONG result = RegCreateKeyExW(HKEY_CURRENT_USER, kResetRegistryKey, 0,
-                                  nullptr, 0, KEY_SET_VALUE, nullptr, &key,
+                                  nullptr, 0, KEY_WRITE, nullptr, &key,
                                   nullptr);
     if (result != ERROR_SUCCESS) {
         errorText = L"无法创建重置标记（注册表错误 " +
