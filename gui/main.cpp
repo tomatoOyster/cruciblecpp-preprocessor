@@ -674,9 +674,9 @@ void selectColorRegion(AppState* app, POINT point, bool ctrl);
 void paintColorOverlay(AppState* app, HDC dc);
 void syncPickerFromSelection(AppState* app);
 void applyPickerColor(AppState* app);
-bool startCacheCleanupHelper(std::wstring& errorText);
 LRESULT CALLBACK ColorOverlayProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
+constexpr wchar_t kSettingsRegistryKey[] = L"Software\\CrucibleCpp\\Settings";
 constexpr wchar_t kAppearanceRegistryKey[] = L"Software\\CrucibleCpp\\Appearance";
 
 struct SettingsState;
@@ -1368,32 +1368,58 @@ struct AppState {
     }
 
     std::wstring getIni(const wchar_t* key, const wchar_t* fallback = L"") const {
+        HKEY handle = nullptr;
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, kSettingsRegistryKey, 0,
+                          KEY_QUERY_VALUE, &handle) != ERROR_SUCCESS) {
+            return fallback;
+        }
         wchar_t buffer[32768]{};
-        GetPrivateProfileStringW(L"gui", key, fallback, buffer,
-                                 static_cast<DWORD>(std::size(buffer)),
-                                 settingsPath().c_str());
+        DWORD size = static_cast<DWORD>(sizeof(buffer));
+        DWORD type = 0;
+        const LONG result = RegQueryValueExW(
+            handle, key, nullptr, &type, reinterpret_cast<BYTE*>(buffer), &size);
+        RegCloseKey(handle);
+        if (result != ERROR_SUCCESS ||
+            (type != REG_SZ && type != REG_EXPAND_SZ)) {
+            return fallback;
+        }
+        buffer[(std::size(buffer) - 1)] = L'\0';
         return buffer;
     }
 
     void putIni(const wchar_t* key, const std::wstring& value) const {
-        const std::wstring path = settingsPath().wstring();
-        WritePrivateProfileStringW(L"gui", key, value.c_str(), path.c_str());
-        // Flush the profile cache immediately. If the process is closed by
-        // Task Manager or crashes, a cached write would otherwise be lost.
-        WritePrivateProfileStringW(nullptr, nullptr, nullptr, path.c_str());
+        HKEY handle = nullptr;
+        if (RegCreateKeyExW(HKEY_CURRENT_USER, kSettingsRegistryKey, 0, nullptr,
+                            0, KEY_WRITE, nullptr, &handle, nullptr) !=
+            ERROR_SUCCESS) {
+            return;
+        }
+        RegSetValueExW(handle, key, 0, REG_SZ,
+                       reinterpret_cast<const BYTE*>(value.c_str()),
+                       static_cast<DWORD>((value.size() + 1) * sizeof(wchar_t)));
+        RegCloseKey(handle);
     }
 
     void recordLaunch() const {
-        const std::filesystem::path path = settingsPath().parent_path() /
-                                           L"launch-count.ini";
-        wchar_t buffer[32]{};
-        GetPrivateProfileStringW(L"stats", L"launches", L"0", buffer,
-                                 static_cast<DWORD>(std::size(buffer)),
-                                 path.c_str());
-        const unsigned long long previous = _wcstoui64(buffer, nullptr, 10);
-        const std::wstring next = std::to_wstring(previous + 1);
-        WritePrivateProfileStringW(L"stats", L"launches", next.c_str(),
-                                   path.c_str());
+        HKEY handle = nullptr;
+        if (RegCreateKeyExW(HKEY_CURRENT_USER, kSettingsRegistryKey, 0, nullptr,
+                            0, KEY_READ | KEY_WRITE, nullptr, &handle, nullptr) !=
+            ERROR_SUCCESS) {
+            return;
+        }
+        DWORD launches = 0;
+        DWORD size = sizeof(launches);
+        DWORD type = 0;
+        if (RegQueryValueExW(handle, L"launches", nullptr, &type,
+                             reinterpret_cast<BYTE*>(&launches), &size) !=
+                ERROR_SUCCESS ||
+            type != REG_DWORD) {
+            launches = 0;
+        }
+        ++launches;
+        RegSetValueExW(handle, L"launches", 0, REG_DWORD,
+                       reinterpret_cast<const BYTE*>(&launches), sizeof(launches));
+        RegCloseKey(handle);
     }
 
     void loadSettings() {
@@ -3266,15 +3292,20 @@ LRESULT CALLBACK SettingsProc(HWND window, UINT message, WPARAM wParam, LPARAM l
                             MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES) {
                 return 0;
             }
-            std::wstring errorText;
-            if (!startCacheCleanupHelper(errorText)) {
-                MessageBoxW(window, errorText.c_str(), L"重置本地缓存",
-                            MB_OK | MB_ICONERROR);
+            const LONG resetResult = RegDeleteTreeW(
+                HKEY_CURRENT_USER, L"Software\\CrucibleCpp");
+            std::error_code cleanupError;
+            std::filesystem::remove_all(state->app->settingsPath().parent_path(), cleanupError);
+            if (resetResult != ERROR_SUCCESS &&
+                resetResult != ERROR_FILE_NOT_FOUND) {
+                MessageBoxW(window,
+                            (L"清空设置失败，注册表错误 " +
+                             std::to_wstring(resetResult)).c_str(),
+                            L"重置本地缓存", MB_OK | MB_ICONERROR);
                 return 0;
             }
             state->app->skipSaveOnExit = true;
-            MessageBoxW(window,
-                        L"软件将退出，随后自动清空本地缓存。",
+            MessageBoxW(window, L"设置、协议状态和启动计数已清空，软件将退出。",
                         L"重置本地缓存", MB_OK | MB_ICONINFORMATION);
             ExitProcess(0);
         }
@@ -3640,78 +3671,9 @@ std::filesystem::path appDataConfigDirectory() {
     return base / L"CrucibleCpp";
 }
 
-bool startCacheCleanupHelper(std::wstring& errorText) {
-    wchar_t module[MAX_PATH * 2]{};
-    const DWORD length = GetModuleFileNameW(nullptr, module,
-                                            static_cast<DWORD>(std::size(module)));
-    if (length == 0) {
-        errorText = L"无法获取程序路径。";
-        return false;
-    }
-    std::wstring command = L"\"" + std::wstring(module) + L"\" --purge-cache " +
-                           std::to_wstring(GetCurrentProcessId());
-    std::vector<wchar_t> mutableCommand(command.begin(), command.end());
-    mutableCommand.push_back(L'\0');
-    STARTUPINFOW startup{};
-    startup.cb = sizeof(startup);
-    PROCESS_INFORMATION process{};
-    if (!CreateProcessW(module, mutableCommand.data(), nullptr, nullptr, FALSE,
-                        CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process)) {
-        errorText = L"无法启动缓存清理进程（错误 " +
-                    std::to_wstring(GetLastError()) + L"）。";
-        return false;
-    }
-    CloseHandle(process.hThread);
-    CloseHandle(process.hProcess);
-    return true;
-}
-
-int runCacheCleanupHelper() {
-    const std::wstring commandLine = GetCommandLineW();
-    const std::size_t marker = commandLine.find(L"--purge-cache");
-    if (marker == std::wstring::npos) return 0;
-    DWORD parentPid = 0;
-    const std::size_t numberStart = commandLine.find_first_of(L"0123456789",
-                                                              marker + 13);
-    if (numberStart != std::wstring::npos) {
-        parentPid = static_cast<DWORD>(wcstoul(commandLine.c_str() + numberStart,
-                                               nullptr, 10));
-    }
-    if (parentPid != 0) {
-        HANDLE parent = OpenProcess(SYNCHRONIZE, FALSE, parentPid);
-        if (parent) {
-            WaitForSingleObject(parent, 60000);
-            CloseHandle(parent);
-        } else {
-            Sleep(1000);
-        }
-    }
-
-    const std::filesystem::path directory = appDataConfigDirectory();
-    std::error_code error;
-    for (int attempt = 0; attempt < 40; ++attempt) {
-        error.clear();
-        std::filesystem::remove_all(directory, error);
-        if (!error) break;
-        Sleep(250);
-    }
-    RegDeleteTreeW(HKEY_CURRENT_USER, L"Software\\\\CrucibleCpp");
-    if (error) {
-        std::wstring message = L"缓存清理失败：\\n" + directory.wstring() +
-                               L"\\n\\n错误：" + utf8ToWide(error.message());
-        MessageBoxW(nullptr, message.c_str(), L"重置本地缓存",
-                    MB_OK | MB_ICONERROR);
-        return 1;
-    }
-    return 0;
-}
-
 } // namespace
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
-    if (std::wstring(GetCommandLineW()).find(L"--purge-cache") != std::wstring::npos) {
-        return runCacheCleanupHelper();
-    }
     // Prefer per-monitor v2; otherwise Windows virtualizes GetClientRect on
     // high-DPI displays and the layout no longer matches the real window.
     HMODULE user32 = GetModuleHandleW(L"user32.dll");
