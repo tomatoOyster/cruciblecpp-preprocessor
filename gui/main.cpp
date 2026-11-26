@@ -1373,8 +1373,11 @@ struct AppState {
     }
 
     void putIni(const wchar_t* key, const std::wstring& value) const {
-        WritePrivateProfileStringW(L"gui", key, value.c_str(),
-                                   settingsPath().c_str());
+        const std::wstring path = settingsPath().wstring();
+        WritePrivateProfileStringW(L"gui", key, value.c_str(), path.c_str());
+        // Flush the profile cache immediately. If the process is closed by
+        // Task Manager or crashes, a cached write would otherwise be lost.
+        WritePrivateProfileStringW(nullptr, nullptr, nullptr, path.c_str());
     }
 
     void recordLaunch() const {
@@ -3080,6 +3083,7 @@ LRESULT CALLBACK SettingsProc(HWND window, UINT message, WPARAM wParam, LPARAM l
         ShowWindow(state->wheel, SW_HIDE); ShowWindow(state->colorMode, SW_HIDE);
         ShowWindow(state->applyColor, SW_HIDE); ShowWindow(state->colorStatus, SW_HIDE);
         state->app->settingsState = state;
+        SetTimer(window, 11, 400, nullptr);
         RECT client{};
         GetClientRect(window, &client);
         layoutSettings(state, client.right - client.left, client.bottom - client.top);
@@ -3123,6 +3127,30 @@ LRESULT CALLBACK SettingsProc(HWND window, UINT message, WPARAM wParam, LPARAM l
         InvalidateRect(state->colorStatus, nullptr, TRUE);
         return 0;
     }
+    case WM_TIMER:
+        if (wParam == 11) {
+            // Safety-net persistence: even if a slider notification is lost,
+            // the current control values are flushed while the dialog is open.
+            const int uiSize = static_cast<int>(
+                SendMessageW(state->uiTrack, TBM_GETPOS, 0, 0));
+            const int codeSize = static_cast<int>(
+                SendMessageW(state->codeTrack, TBM_GETPOS, 0, 0));
+            const int spacing = static_cast<int>(
+                SendMessageW(state->spacingTrack, TBM_GETPOS, 0, 0));
+            if (uiSize != state->app->uiFontSize ||
+                codeSize != state->app->codeFontSize ||
+                spacing != state->app->letterSpacing) {
+                state->app->uiFontSize = uiSize;
+                state->app->codeFontSize = codeSize;
+                state->app->letterSpacing = spacing;
+                state->app->putIni(L"uiFontSize", std::to_wstring(uiSize));
+                state->app->putIni(L"codeFontSize", std::to_wstring(codeSize));
+                state->app->putIni(L"letterSpacing", std::to_wstring(spacing));
+                state->app->rebuildFonts();
+            }
+            return 0;
+        }
+        break;
     case WM_COMMAND:
         if (LOWORD(wParam) == 4001) {
             state->fontOpen = !state->fontOpen;
@@ -3220,6 +3248,7 @@ LRESULT CALLBACK SettingsProc(HWND window, UINT message, WPARAM wParam, LPARAM l
         DestroyWindow(window);
         return 0;
     case WM_NCDESTROY:
+        KillTimer(window, 11);
         stopColorPickMode(state->app);
         state->app->settingsState = nullptr;
         SetWindowLongPtrW(window, GWLP_USERDATA, 0);
