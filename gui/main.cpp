@@ -3426,8 +3426,8 @@ void paintColorOverlay(AppState* app, HDC dc) {
         SetBkMode(dc, TRANSPARENT);
         SetTextColor(dc, RGB(255, 255, 255));
         HGDIOBJ font = SelectObject(dc, app->uiFont);
-        DrawTextW(dc, region.label, -1, &label,
-                  DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+        TextOutW(dc, label.left + 6, label.top + 5, region.label,
+                 static_cast<int>(wcslen(region.label)));
         SelectObject(dc, font);
         break;
     }
@@ -3465,6 +3465,8 @@ LRESULT CALLBACK ColorOverlayProc(HWND window, UINT message, WPARAM wParam, LPAR
     case WM_PAINT: {
         PAINTSTRUCT paint{};
         HDC dc = BeginPaint(window, &paint);
+        RECT client{};
+        GetClientRect(window, &client);
         paintColorOverlay(app, dc);
         EndPaint(window, &paint);
         return 0;
