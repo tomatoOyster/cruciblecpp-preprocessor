@@ -2,8 +2,10 @@
 #include "Preprocessor.h"
 
 #include <windows.h>
+#include <windowsx.h>
 #include <commctrl.h>
 #include <commdlg.h>
+#include <winhttp.h>
 #include <dwmapi.h>
 #include <shellapi.h>
 
@@ -26,7 +28,10 @@ constexpr wchar_t kWindowClass[] = L"CrucibleCppGuiWindow";
 constexpr UINT kRunDoneMessage = WM_APP + 1;
 constexpr UINT kLayoutMessage = WM_APP + 2;
 constexpr UINT kAuxDoneMessage = WM_APP + 3;
+constexpr UINT kAnnouncementMessage = WM_APP + 4;
 constexpr int kMaxDisplayBytes = 8 * 1024 * 1024;
+constexpr wchar_t kAnnouncementHost[] = L"hfsdr.cn";
+constexpr wchar_t kAnnouncementPath[] = L"/announcement.ini";
 
 constexpr COLORREF kBackground = RGB(244, 251, 249);
 constexpr COLORREF kPanel = RGB(255, 255, 255);
@@ -329,6 +334,116 @@ COLORREF blendColor(COLORREF from, COLORREF to, float t) {
                mix(GetBValue(from), GetBValue(to)));
 }
 
+struct Announcement {
+    bool enabled = false;
+    std::string id;
+    std::string title;
+    std::string body;
+    std::string link;
+    std::string linkText;
+};
+
+std::string trimAscii(std::string value) {
+    const auto first = value.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) return {};
+    const auto last = value.find_last_not_of(" \t\r\n");
+    return value.substr(first, last - first + 1);
+}
+
+std::string unescapeAscii(std::string value) {
+    std::string result;
+    result.reserve(value.size());
+    for (std::size_t i = 0; i < value.size(); ++i) {
+        if (value[i] == '\\' && i + 1 < value.size()) {
+            const char next = value[i + 1];
+            if (next == 'n') { result.push_back('\n'); ++i; continue; }
+            if (next == 'r') { result.push_back('\r'); ++i; continue; }
+            if (next == '\\') { result.push_back('\\'); ++i; continue; }
+        }
+        result.push_back(value[i]);
+    }
+    return result;
+}
+
+Announcement parseAnnouncement(const std::string& text) {
+    Announcement announcement;
+    std::string line;
+    auto consume = [&](const std::string& raw) {
+        const std::string value = trimAscii(raw);
+        if (value.empty() || value[0] == '#' || value[0] == ';') return;
+        const auto equals = value.find('=');
+        if (equals == std::string::npos) return;
+        std::string key = trimAscii(value.substr(0, equals));
+        std::string data = unescapeAscii(trimAscii(value.substr(equals + 1)));
+        for (char& c : key) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (key == "enabled") {
+            announcement.enabled = data == "1" || data == "true" || data == "yes";
+        } else if (key == "id") {
+            announcement.id = data;
+        } else if (key == "title") {
+            announcement.title = data;
+        } else if (key == "body") {
+            announcement.body = data;
+        } else if (key == "link") {
+            announcement.link = data;
+        } else if (key == "link_text" || key == "linktext") {
+            announcement.linkText = data;
+        }
+    };
+    for (char c : text) {
+        if (c == '\n') { consume(line); line.clear(); }
+        else line.push_back(c);
+    }
+    consume(line);
+    if (announcement.linkText.empty()) announcement.linkText = "查看详情";
+    return announcement;
+}
+
+std::string fetchAnnouncementText() {
+    std::string result;
+    HINTERNET session = WinHttpOpen(L"CrucibleCpp/3.1.1",
+                                    WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                                    WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    if (!session) return result;
+    WinHttpSetTimeouts(session, 4000, 4000, 4000, 8000);
+    HINTERNET connection = WinHttpConnect(session, kAnnouncementHost,
+                                          INTERNET_DEFAULT_HTTPS_PORT, 0);
+    if (!connection) { WinHttpCloseHandle(session); return result; }
+    std::wstring path = kAnnouncementPath;
+    path += L"?ts=" + std::to_wstring(GetTickCount64());
+    HINTERNET request = WinHttpOpenRequest(connection, L"GET", path.c_str(), nullptr,
+                                           WINHTTP_NO_REFERER,
+                                           WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE);
+    if (!request) {
+        WinHttpCloseHandle(connection);
+        WinHttpCloseHandle(session);
+        return result;
+    }
+    DWORD redirect = WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS;
+    WinHttpSetOption(request, WINHTTP_OPTION_REDIRECT_POLICY, &redirect, sizeof(redirect));
+    if (WinHttpSendRequest(request, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
+                           WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
+        WinHttpReceiveResponse(request, nullptr)) {
+        DWORD status = 0;
+        DWORD size = sizeof(status);
+        WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+                            WINHTTP_HEADER_NAME_BY_INDEX, &status, &size,
+                            WINHTTP_NO_HEADER_INDEX);
+        if (status == 200) {
+            char buffer[4096];
+            DWORD read = 0;
+            while (WinHttpReadData(request, buffer, sizeof(buffer), &read) && read > 0) {
+                result.append(buffer, read);
+                if (result.size() > 128 * 1024) break;
+            }
+        }
+    }
+    WinHttpCloseHandle(request);
+    WinHttpCloseHandle(connection);
+    WinHttpCloseHandle(session);
+    return result;
+}
+
 struct ProcessResult {
     bool started = false;
     DWORD exitCode = 1;
@@ -483,6 +598,7 @@ struct AppState {
     HWND compileOutput = nullptr;
     HWND outputView = nullptr;
     HWND diagView = nullptr;
+    HWND announcementBanner = nullptr;
     HWND status = nullptr;
     HWND labels[4]{};
     HWND outputLabel = nullptr;
@@ -490,6 +606,8 @@ struct AppState {
     HFONT uiFont = nullptr;
     HFONT titleFont = nullptr;
     HFONT subtitleFont = nullptr;
+    HFONT announcementTitleFont = nullptr;
+    HFONT announcementBodyFont = nullptr;
     HFONT codeFont = nullptr;
     HBRUSH backgroundBrush = nullptr;
     HBRUSH panelBrush = nullptr;
@@ -521,6 +639,12 @@ struct AppState {
     std::string resultOutput;
     std::string resultDiagnostics;
     std::string resultStatus;
+    Announcement announcement;
+    std::thread announcementWorker;
+    std::wstring announcementLink;
+    std::wstring announcementLinkText;
+    int announcementHeight = 0;
+    bool announcementVisible = false;
 
     void createControls() {
         const DWORD editStyle = WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL;
@@ -595,6 +719,11 @@ struct AppState {
                                        WS_CLIPSIBLINGS,
                                    0, 0, 10, 10, window,
                                    reinterpret_cast<HMENU>(IDC_DIAG_VIEW), instance, nullptr);
+        announcementBanner = CreateWindowExW(0, L"CrucibleCppAnnouncementBanner", L"",
+                                             WS_CHILD | WS_CLIPSIBLINGS,
+                                             0, 0, 10, 10, window, nullptr,
+                                             instance, this);
+        ShowWindow(announcementBanner, SW_HIDE);
         outputLabel = CreateWindowExW(0, L"STATIC", L"输出 .i",
                                      WS_CHILD | WS_VISIBLE | SS_LEFT,
                                      0, 0, 10, 10, window,
@@ -652,9 +781,123 @@ struct AppState {
         layout(width, height);
     }
 
+    void paintAnnouncement(HDC dc) {
+        RECT client{};
+        GetClientRect(announcementBanner, &client);
+        HBRUSH background = CreateSolidBrush(kPanel);
+        FillRect(dc, &client, background);
+        DeleteObject(background);
+        HPEN border = CreatePen(PS_SOLID, 1, kBorder);
+        HBRUSH card = CreateSolidBrush(kPanel);
+        HGDIOBJ oldPen = SelectObject(dc, border);
+        HGDIOBJ oldBrush = SelectObject(dc, card);
+        RoundRect(dc, 0, 0, client.right, client.bottom, 14, 14);
+        SelectObject(dc, oldBrush);
+        SelectObject(dc, oldPen);
+        DeleteObject(border);
+        DeleteObject(card);
+        HBRUSH stripe = CreateSolidBrush(kAccent);
+        RECT stripeRect{0, 0, 6, client.bottom};
+        FillRect(dc, &stripeRect, stripe);
+        DeleteObject(stripe);
+
+        HBRUSH mark = CreateSolidBrush(kAccent);
+        HPEN noPen = CreatePen(PS_NULL, 0, kAccent);
+        oldPen = SelectObject(dc, noPen);
+        oldBrush = SelectObject(dc, mark);
+        Ellipse(dc, 16, 16, 46, 46);
+        SelectObject(dc, oldBrush);
+        SelectObject(dc, oldPen);
+        DeleteObject(noPen);
+        DeleteObject(mark);
+        SelectObject(dc, announcementTitleFont);
+        SetBkMode(dc, TRANSPARENT);
+        SetTextColor(dc, RGB(255, 255, 255));
+        RECT markText{16, 16, 46, 46};
+        DrawTextW(dc, L"i", -1, &markText, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
+
+        SetTextColor(dc, kText);
+        RECT title{58, 10, client.right - 40, 34};
+        DrawTextW(dc, utf8ToWide(announcement.title).c_str(), -1, &title,
+                  DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS);
+        SelectObject(dc, announcementBodyFont);
+        SetTextColor(dc, kMuted);
+        RECT body{58, 34, client.right - 26, 74};
+        DrawTextW(dc, utf8ToWide(announcement.body).c_str(), -1, &body,
+                  DT_LEFT | DT_WORDBREAK | DT_END_ELLIPSIS);
+        if (!announcementLink.empty()) {
+            SetTextColor(dc, kAccent);
+            RECT link{58, 76, client.right - 40, 100};
+            DrawTextW(dc, announcementLinkText.c_str(), -1, &link,
+                      DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
+        }
+        SelectObject(dc, announcementTitleFont);
+        SetTextColor(dc, kMuted);
+        RECT close{client.right - 34, 8, client.right - 8, 32};
+        DrawTextW(dc, L"×", -1, &close, DT_CENTER | DT_SINGLELINE | DT_VCENTER);
+    }
+
+    void dismissAnnouncement() {
+        announcementVisible = false;
+        announcementHeight = 0;
+        ShowWindow(announcementBanner, SW_HIDE);
+        if (!announcement.id.empty()) {
+            putIni(L"announcementDismissed", utf8ToWide(announcement.id));
+        }
+        layoutForWindow();
+        InvalidateRect(window, nullptr, TRUE);
+    }
+
+    void showAnnouncement() {
+        if (announcement.title.empty() || announcement.body.empty()) return;
+        announcementLink = utf8ToWide(announcement.link);
+        announcementLinkText = utf8ToWide(announcement.linkText);
+        announcementVisible = true;
+        announcementHeight = 112;
+        ShowWindow(announcementBanner, SW_SHOW);
+        layoutForWindow();
+        InvalidateRect(announcementBanner, nullptr, TRUE);
+    }
+
+    void clickAnnouncement(int x, int y) {
+        RECT client{};
+        GetClientRect(announcementBanner, &client);
+        if (x >= client.right - 38 && x <= client.right - 4 && y >= 4 && y <= 36) {
+            dismissAnnouncement();
+            return;
+        }
+        if (!announcementLink.empty() && x >= 40 && x <= client.right - 40 &&
+            y >= 72 && y <= 102) {
+            ShellExecuteW(window, L"open", announcementLink.c_str(), nullptr, nullptr,
+                          SW_SHOWNORMAL);
+        }
+    }
+
+    void fetchAnnouncement() {
+        if (announcementWorker.joinable()) return;
+        announcementWorker = std::thread([this]() {
+            const std::string text = fetchAnnouncementText();
+            announcement = parseAnnouncement(text);
+            PostMessageW(window, kAnnouncementMessage, 0, 0);
+        });
+    }
+
+    void finishAnnouncement() {
+        if (announcementWorker.joinable()) announcementWorker.join();
+        if (!announcement.enabled || announcement.title.empty() ||
+            announcement.body.empty()) {
+            return;
+        }
+        if (!announcement.id.empty() &&
+            getIni(L"announcementDismissed") == utf8ToWide(announcement.id)) {
+            return;
+        }
+        showAnnouncement();
+    }
+
     void layout(int width, int height) {
         const int margin = 18;
-        const int top = 92;
+        const int top = 92 + announcementHeight;
         const int labelWidth = 94;
         const int buttonWidth = 78;
         const int row = 34;
@@ -684,6 +927,12 @@ struct AppState {
         MoveWindow(compileOutput, editX + 370, y, 70, 29, TRUE);
         MoveWindow(options, editX + 446, y, 56, 29, TRUE);
         MoveWindow(copyCli, editX + 508, y, 96, 29, TRUE);
+        if (announcementVisible) {
+            MoveWindow(announcementBanner, margin, 80, width - 2 * margin, 104, TRUE);
+            ShowWindow(announcementBanner, SW_SHOW);
+        } else {
+            ShowWindow(announcementBanner, SW_HIDE);
+        }
         formRect = {margin - 8, top - 12, width - margin + 8, top + row * 4 + 12};
         y = top + row * 4 + 24;
         outputLabelRect = {margin, y, width - margin, y + 20};
@@ -1454,6 +1703,9 @@ struct AppState {
         case kAuxDoneMessage:
             finishAux();
             return 0;
+        case kAnnouncementMessage:
+            finishAnnouncement();
+            return 0;
         case WM_DROPFILES: {
             HDROP drop = reinterpret_cast<HDROP>(wParam);
             wchar_t file[32768]{};
@@ -1473,12 +1725,15 @@ struct AppState {
             DestroyWindow(window);
             return 0;
         case WM_DESTROY:
+            if (announcementWorker.joinable()) announcementWorker.detach();
             KillTimer(window, 1);
             KillTimer(window, 2);
             saveSettings();
             if (uiFont) DeleteObject(uiFont);
             if (titleFont) DeleteObject(titleFont);
             if (subtitleFont) DeleteObject(subtitleFont);
+            if (announcementTitleFont) DeleteObject(announcementTitleFont);
+            if (announcementBodyFont) DeleteObject(announcementBodyFont);
             if (codeFont) DeleteObject(codeFont);
             if (backgroundBrush) DeleteObject(backgroundBrush);
             if (panelBrush) DeleteObject(panelBrush);
@@ -1847,6 +2102,51 @@ bool showAgreementDialog(AppState* app) {
     return state.accepted;
 }
 
+LRESULT CALLBACK AnnouncementBannerProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+    auto* app = reinterpret_cast<AppState*>(GetWindowLongPtrW(window, GWLP_USERDATA));
+    if (!app) {
+        if (message == WM_NCCREATE) {
+            auto* create = reinterpret_cast<CREATESTRUCTW*>(lParam);
+            app = static_cast<AppState*>(create->lpCreateParams);
+            SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(app));
+        } else {
+            return DefWindowProcW(window, message, wParam, lParam);
+        }
+    }
+    switch (message) {
+    case WM_ERASEBKGND:
+        return 1;
+    case WM_PAINT: {
+        PAINTSTRUCT paint{};
+        HDC dc = BeginPaint(window, &paint);
+        app->paintAnnouncement(dc);
+        EndPaint(window, &paint);
+        return 0;
+    }
+    case WM_LBUTTONUP:
+        app->clickAnnouncement(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+        return 0;
+    case WM_SETCURSOR: {
+        POINT point{};
+        GetCursorPos(&point);
+        ScreenToClient(window, &point);
+        RECT client{};
+        GetClientRect(window, &client);
+        const bool overClose = point.x >= client.right - 38 &&
+                               point.y <= 36;
+        const bool overLink = !app->announcement.link.empty() &&
+                              point.x >= 40 && point.x <= client.right - 40 &&
+                              point.y >= 72 && point.y <= 102;
+        if (overClose || overLink) {
+            SetCursor(LoadCursorW(nullptr, IDC_HAND));
+            return TRUE;
+        }
+        break;
+    }
+    }
+    return DefWindowProcW(window, message, wParam, lParam);
+}
+
 AppState* stateFrom(HWND window) {
     return reinterpret_cast<AppState*>(GetWindowLongPtrW(window, GWLP_USERDATA));
 }
@@ -1903,12 +2203,30 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
                                      DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
                                      CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
                                      DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+    state.announcementTitleFont = CreateFontW(-16, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+                                              DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+                                              CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                                              DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+    state.announcementBodyFont = CreateFontW(-13, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                                             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+                                             CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                                             DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
     state.codeFont = CreateFontW(-15, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
                                  DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
                                  CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
                                  FIXED_PITCH | FF_MODERN, L"Consolas");
     state.backgroundBrush = CreateSolidBrush(kBackground);
     state.panelBrush = CreateSolidBrush(kPanel);
+
+    WNDCLASSEXW bannerClass{};
+    bannerClass.cbSize = sizeof(bannerClass);
+    bannerClass.style = CS_HREDRAW | CS_VREDRAW;
+    bannerClass.lpfnWndProc = AnnouncementBannerProc;
+    bannerClass.hInstance = instance;
+    bannerClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    bannerClass.hbrBackground = nullptr;
+    bannerClass.lpszClassName = L"CrucibleCppAnnouncementBanner";
+    RegisterClassExW(&bannerClass);
 
     WNDCLASSEXW windowClass{};
     windowClass.cbSize = sizeof(windowClass);
@@ -1961,6 +2279,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
         }
     }
 
+    state.fetchAnnouncement();
+
     state.applyCommandLine();
     RECT client2{};
     GetClientRect(window, &client2);
@@ -1977,6 +2297,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
     }
     return static_cast<int>(message.wParam);
 }
+
 
 
 

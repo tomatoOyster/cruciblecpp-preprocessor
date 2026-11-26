@@ -86,6 +86,32 @@ cruciblecpp-gui.exe            原生 Win32 GUI
 - 拖放源文件到窗口。
 - 记住 GCC、C++ 标准和选项设置；源文件/输出路径每次都从空白开始。
 - 自绘按钮、悬停动画、DPI 和窗口尺寸自适应的输出/诊断布局。
+- 启动时从 `https://hfsdr.cn/announcement.ini` 异步拉取公告，顶部卡片展示；同一公告关闭后不再显示。
+
+### GUI 公告
+
+公告文件位于服务器：
+
+```text
+/www/wwwroot/hfsdr.cn/announcement.ini
+```
+
+格式：
+
+```ini
+[announcement]
+enabled=1
+id=20261126-gui-announcement-1
+title=CrucibleCpp GUI 公告
+body=公告内容。
+link=https://github.com/tomatoOyster/cruciblecpp-preprocessor/releases
+link_text=查看 Release
+```
+
+- `enabled=0` 关闭公告
+- 修改 `id` 后，即使用户关闭过旧公告，也会重新显示
+- `body` 支持 `\n` 换行
+- 公告请求失败时静默忽略，不影响预处理
 
 ### 典型流程
 
