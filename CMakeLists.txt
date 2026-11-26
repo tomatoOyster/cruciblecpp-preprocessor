@@ -57,6 +57,7 @@ if(WIN32)
         ole32
         dwmapi
         winhttp
+        advapi32
         Threads::Threads
     )
     target_compile_definitions(cruciblecpp-gui PRIVATE

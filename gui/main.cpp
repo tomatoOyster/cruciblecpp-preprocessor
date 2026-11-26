@@ -677,6 +677,10 @@ void applyPickerColor(AppState* app);
 bool scheduleCacheReset(std::wstring& errorText);
 LRESULT CALLBACK ColorOverlayProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
+constexpr wchar_t kAppearanceRegistryKey[] = L"Software\\CrucibleCpp\\Appearance";
+constexpr wchar_t kResetRegistryKey[] = L"Software\\CrucibleCppReset";
+constexpr wchar_t kResetValue[] = L"PendingCacheReset";
+
 struct SettingsState;
 
 struct AppState {
@@ -1405,6 +1409,7 @@ struct AppState {
         for (const auto& def : themeColorDefs()) {
             *def.value = colorFromHex(getIni(def.key), *def.value);
         }
+        loadAppearanceFromRegistry();
         // Source and output start empty by design; the user must choose them
         // explicitly for every new session.
         selectedInput.clear();
@@ -1462,6 +1467,68 @@ struct AppState {
         }
         putIni(L"includes", includes);
         putIni(L"defines", defines);
+        saveAppearanceToRegistry();
+    }
+
+    void saveAppearanceToRegistry() const {
+        HKEY key = nullptr;
+        if (RegCreateKeyExW(HKEY_CURRENT_USER, kAppearanceRegistryKey, 0, nullptr, 0,
+                            KEY_SET_VALUE | KEY_QUERY_VALUE, nullptr, &key,
+                            nullptr) != ERROR_SUCCESS) {
+            return;
+        }
+        auto setDword = [&](const wchar_t* name, int value) {
+            DWORD data = static_cast<DWORD>(value);
+            RegSetValueExW(key, name, 0, REG_DWORD,
+                           reinterpret_cast<const BYTE*>(&data), sizeof(data));
+        };
+        setDword(L"uiFontSize", uiFontSize);
+        setDword(L"codeFontSize", codeFontSize);
+        setDword(L"letterSpacing", letterSpacing);
+        for (const auto& def : themeColorDefs()) {
+            const std::wstring hex = colorToHex(*def.value);
+            RegSetValueExW(key, def.key, 0, REG_SZ,
+                           reinterpret_cast<const BYTE*>(hex.c_str()),
+                           static_cast<DWORD>((hex.size() + 1) * sizeof(wchar_t)));
+        }
+        RegCloseKey(key);
+    }
+
+    void loadAppearanceFromRegistry() {
+        HKEY key = nullptr;
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, kAppearanceRegistryKey, 0,
+                          KEY_QUERY_VALUE, &key) != ERROR_SUCCESS) {
+            return;
+        }
+        auto readDword = [&](const wchar_t* name, int& value) {
+            DWORD data = 0;
+            DWORD size = sizeof(data);
+            DWORD type = 0;
+            if (RegQueryValueExW(key, name, nullptr, &type,
+                                 reinterpret_cast<BYTE*>(&data), &size) ==
+                    ERROR_SUCCESS &&
+                type == REG_DWORD) {
+                value = static_cast<int>(data);
+            }
+        };
+        readDword(L"uiFontSize", uiFontSize);
+        readDword(L"codeFontSize", codeFontSize);
+        readDword(L"letterSpacing", letterSpacing);
+        uiFontSize = std::clamp(uiFontSize, 10, 26);
+        codeFontSize = std::clamp(codeFontSize, 10, 28);
+        letterSpacing = std::clamp(letterSpacing, 0, 4);
+        for (const auto& def : themeColorDefs()) {
+            wchar_t buffer[32]{};
+            DWORD size = static_cast<DWORD>(sizeof(buffer));
+            DWORD type = 0;
+            if (RegQueryValueExW(key, def.key, nullptr, &type,
+                                 reinterpret_cast<BYTE*>(buffer), &size) ==
+                    ERROR_SUCCESS &&
+                type == REG_SZ) {
+                *def.value = colorFromHex(buffer, *def.value);
+            }
+        }
+        RegCloseKey(key);
     }
 
     std::wstring buildCliCommand() {
@@ -2724,7 +2791,7 @@ void updateFontLabels(SettingsState* state) {
 }
 
 int settingsExpandedHeight(const SettingsState* state) {
-    int height = 380;
+    int height = 430;
     if (state->fontOpen) height += 112;
     if (state->colorOpen) height += 320;
     return height;
@@ -3104,6 +3171,7 @@ LRESULT CALLBACK SettingsProc(HWND window, UINT message, WPARAM wParam, LPARAM l
         state->app->putIni(L"uiFontSize", std::to_wstring(state->app->uiFontSize));
         state->app->putIni(L"codeFontSize", std::to_wstring(state->app->codeFontSize));
         state->app->putIni(L"letterSpacing", std::to_wstring(state->app->letterSpacing));
+        state->app->saveAppearanceToRegistry();
         state->app->rebuildFonts();
         return 0;
     case WM_CTLCOLORSTATIC: {
@@ -3200,6 +3268,8 @@ LRESULT CALLBACK SettingsProc(HWND window, UINT message, WPARAM wParam, LPARAM l
                             MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES) {
                 return 0;
             }
+            RegDeleteTreeW(HKEY_CURRENT_USER,
+                           L"Software\\CrucibleCpp");
             std::wstring errorText;
             if (!scheduleCacheReset(errorText)) {
                 MessageBoxW(window, errorText.c_str(), L"重置本地缓存",
@@ -3288,7 +3358,7 @@ void showSettingsDialog(AppState* app) {
     RECT work{};
     SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
     const int width = 850;
-    const int height = 380;
+    const int height = 430;
     HWND dialog = CreateWindowExW(
         WS_EX_TOPMOST | WS_EX_DLGMODALFRAME, L"CrucibleCppSettingsWindow",
         L"CrucibleCpp 设置", WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_VISIBLE,
@@ -3574,9 +3644,6 @@ std::filesystem::path appDataConfigDirectory() {
     return base / L"CrucibleCpp";
 }
 
-constexpr wchar_t kResetRegistryKey[] = L"Software\\CrucibleCpp";
-constexpr wchar_t kResetValue[] = L"PendingCacheReset";
-
 bool scheduleCacheReset(std::wstring& errorText) {
     HKEY key = nullptr;
     LONG result = RegCreateKeyExW(HKEY_CURRENT_USER, kResetRegistryKey, 0,
@@ -3616,13 +3683,15 @@ bool hasPendingCacheReset() {
     return result == ERROR_SUCCESS && type == REG_DWORD && value != 0;
 }
 
-void clearPendingCacheReset() {
+bool clearPendingCacheReset() {
     HKEY key = nullptr;
     if (RegOpenKeyExW(HKEY_CURRENT_USER, kResetRegistryKey, 0,
-                      KEY_SET_VALUE, &key) == ERROR_SUCCESS) {
-        RegDeleteValueW(key, kResetValue);
-        RegCloseKey(key);
+                      KEY_SET_VALUE, &key) != ERROR_SUCCESS) {
+        return false;
     }
+    const LONG result = RegDeleteValueW(key, kResetValue);
+    RegCloseKey(key);
+    return result == ERROR_SUCCESS || result == ERROR_FILE_NOT_FOUND;
 }
 
 bool performPendingCacheReset(std::wstring& errorText) {
@@ -3641,7 +3710,11 @@ bool performPendingCacheReset(std::wstring& errorText) {
                     L"\n标记已保留，下次启动会继续尝试。";
         return false;
     }
-    clearPendingCacheReset();
+    if (!clearPendingCacheReset()) {
+        errorText = L"本地缓存已删除，但无法清除重置标记。\n"
+                    L"下次启动可能会再清理一次。";
+        return false;
+    }
     return true;
 }
 
@@ -3659,10 +3732,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
     {
         std::wstring resetError;
         if (!performPendingCacheReset(resetError)) {
+            // Do not brick startup because the old cache is locked. Keep the
+            // registry marker so the next launch retries, but let the user
+            // open the application with the current configuration.
             MessageBoxW(nullptr, resetError.c_str(), L"重置本地缓存",
-                        MB_OK | MB_ICONERROR);
-            if (instanceMutex) CloseHandle(instanceMutex);
-            return 1;
+                        MB_OK | MB_ICONWARNING);
         }
     }
     // Prefer per-monitor v2; otherwise Windows virtualizes GetClientRect on
