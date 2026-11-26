@@ -33,15 +33,56 @@ constexpr int kMaxDisplayBytes = 8 * 1024 * 1024;
 constexpr wchar_t kAnnouncementHost[] = L"hfsdr.cn";
 constexpr wchar_t kAnnouncementPath[] = L"/announcement.ini";
 
-constexpr COLORREF kBackground = RGB(244, 251, 249);
-constexpr COLORREF kPanel = RGB(255, 255, 255);
-constexpr COLORREF kHeader = RGB(7, 59, 58);
-constexpr COLORREF kAccent = RGB(8, 127, 120);
-constexpr COLORREF kAccentSoft = RGB(224, 247, 243);
-constexpr COLORREF kText = RGB(7, 59, 58);
-constexpr COLORREF kMuted = RGB(76, 112, 109);
-constexpr COLORREF kBorder = RGB(204, 226, 222);
-constexpr COLORREF kDanger = RGB(176, 58, 58);
+COLORREF kBackground = RGB(244, 251, 249);
+COLORREF kPanel = RGB(255, 255, 255);
+COLORREF kOutputBackground = RGB(255, 255, 255);
+COLORREF kDiagBackground = RGB(255, 255, 255);
+COLORREF kBanner = RGB(255, 255, 255);
+COLORREF kHeader = RGB(7, 59, 58);
+COLORREF kAccent = RGB(8, 127, 120);
+COLORREF kAccentSoft = RGB(224, 247, 243);
+COLORREF kText = RGB(7, 59, 58);
+COLORREF kMuted = RGB(76, 112, 109);
+COLORREF kBorder = RGB(204, 226, 222);
+COLORREF kDanger = RGB(176, 58, 58);
+
+std::wstring colorToHex(COLORREF color) {
+    wchar_t buffer[16]{};
+    swprintf_s(buffer, L"#%02X%02X%02X",
+               GetRValue(color), GetGValue(color), GetBValue(color));
+    return buffer;
+}
+
+COLORREF colorFromHex(const std::wstring& value, COLORREF fallback) {
+    if (value.size() != 7 || value[0] != L'#') return fallback;
+    wchar_t* end = nullptr;
+    const unsigned long parsed = wcstoul(value.c_str() + 1, &end, 16);
+    if (!end || *end != L'\0') return fallback;
+    return RGB((parsed >> 16) & 0xFF, (parsed >> 8) & 0xFF, parsed & 0xFF);
+}
+
+struct ThemeColorDef {
+    const wchar_t* key;
+    const wchar_t* label;
+    COLORREF* value;
+};
+
+std::vector<ThemeColorDef> themeColorDefs() {
+    return {
+        {L"colorBackground", L"窗口背景", &kBackground},
+        {L"colorHeader", L"顶部栏", &kHeader},
+        {L"colorPanel", L"面板", &kPanel},
+        {L"colorBanner", L"公告卡片", &kBanner},
+        {L"colorText", L"正文", &kText},
+        {L"colorMuted", L"次要文字", &kMuted},
+        {L"colorAccent", L"强调色", &kAccent},
+        {L"colorAccentSoft", L"浅强调", &kAccentSoft},
+        {L"colorBorder", L"边框", &kBorder},
+        {L"colorDanger", L"取消/危险", &kDanger},
+        {L"colorOutput", L"输出背景", &kOutputBackground},
+        {L"colorDiagnostics", L"诊断背景", &kDiagBackground},
+    };
+}
 constexpr wchar_t kAgreementText[] = LR"AGREEMENT(CrucibleCpp 用户协议
 
 协议版本：2.0
@@ -614,6 +655,8 @@ struct AppState {
     HFONT codeFont = nullptr;
     HBRUSH backgroundBrush = nullptr;
     HBRUSH panelBrush = nullptr;
+    HBRUSH outputBackgroundBrush = nullptr;
+    HBRUSH diagBackgroundBrush = nullptr;
     RECT formRect{};
     RECT resultRect{};
     RECT outputLabelRect{};
@@ -651,6 +694,9 @@ struct AppState {
     std::wstring announcementLinkText;
     int announcementHeight = 0;
     bool announcementVisible = false;
+    int uiFontSize = 13;
+    int codeFontSize = 15;
+    int letterSpacing = 0;
 
     void createControls() {
         const DWORD editStyle = WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL;
@@ -790,14 +836,63 @@ struct AppState {
         layout(width, height);
     }
 
+    void applyThemeColors() {
+        if (backgroundBrush) DeleteObject(backgroundBrush);
+        if (panelBrush) DeleteObject(panelBrush);
+        if (outputBackgroundBrush) DeleteObject(outputBackgroundBrush);
+        if (diagBackgroundBrush) DeleteObject(diagBackgroundBrush);
+        backgroundBrush = CreateSolidBrush(kBackground);
+        panelBrush = CreateSolidBrush(kPanel);
+        outputBackgroundBrush = CreateSolidBrush(kOutputBackground);
+        diagBackgroundBrush = CreateSolidBrush(kDiagBackground);
+        SetClassLongPtrW(window, GCLP_HBRBACKGROUND,
+                         reinterpret_cast<LONG_PTR>(backgroundBrush));
+        InvalidateRect(window, nullptr, TRUE);
+        if (announcementBanner) InvalidateRect(announcementBanner, nullptr, TRUE);
+    }
+
+    void rebuildFonts() {
+        auto replaceFont = [](HFONT& font, int size, int weight, const wchar_t* face) {
+            if (font) DeleteObject(font);
+            font = CreateFontW(-size, 0, 0, 0, weight, FALSE, FALSE, FALSE,
+                               DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+                               CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                               DEFAULT_PITCH | FF_SWISS, face);
+        };
+        replaceFont(uiFont, uiFontSize, FW_NORMAL, L"Segoe UI");
+        replaceFont(titleFont, uiFontSize + 15, FW_BOLD, L"Segoe UI");
+        replaceFont(subtitleFont, std::max(10, uiFontSize - 1), FW_NORMAL, L"Segoe UI");
+        replaceFont(announcementTitleFont, uiFontSize + 3, FW_BOLD, L"Segoe UI");
+        replaceFont(announcementBodyFont, uiFontSize, FW_NORMAL, L"Segoe UI");
+        replaceFont(announcementCloseFont, 36, FW_NORMAL, L"Segoe UI");
+        if (codeFont) DeleteObject(codeFont);
+        codeFont = CreateFontW(-codeFontSize, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                               DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+                               CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                               FIXED_PITCH | FF_MODERN, L"Consolas");
+        for (HWND control : {input, browseInput, output, browseOutput, gcc,
+                             browseGcc, detectGcc, standard, run, cancel, options,
+                             copyCli, compareGcc, compileOutput, settingsButton,
+                             outputLabel, diagLabel, status}) {
+            SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont), TRUE);
+        }
+        SendMessageW(outputView, WM_SETFONT, reinterpret_cast<WPARAM>(codeFont), TRUE);
+        SendMessageW(diagView, WM_SETFONT, reinterpret_cast<WPARAM>(codeFont), TRUE);
+        for (HWND label : labels) {
+            SendMessageW(label, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont), TRUE);
+        }
+        InvalidateRect(window, nullptr, TRUE);
+    }
+
     void paintAnnouncement(HDC dc) {
+        SetTextCharacterExtra(dc, letterSpacing);
         RECT client{};
         GetClientRect(announcementBanner, &client);
         HBRUSH background = CreateSolidBrush(kPanel);
         FillRect(dc, &client, background);
         DeleteObject(background);
         HPEN border = CreatePen(PS_SOLID, 1, kBorder);
-        HBRUSH card = CreateSolidBrush(kPanel);
+        HBRUSH card = CreateSolidBrush(kBanner);
         HGDIOBJ oldPen = SelectObject(dc, border);
         HGDIOBJ oldBrush = SelectObject(dc, card);
         RoundRect(dc, 0, 0, client.right, client.bottom, 14, 14);
@@ -944,6 +1039,7 @@ struct AppState {
     }
 
     void paintAnnouncementFullscreen(HDC dc, HWND target) {
+        SetTextCharacterExtra(dc, letterSpacing);
         RECT screen{};
         GetClientRect(target, &screen);
         FillRect(dc, &screen, backgroundBrush);
@@ -1011,30 +1107,62 @@ struct AppState {
                    buttonWidth + 10, 27, TRUE);
         y += row;
         MoveWindow(standard, editX, y, 108, 200, TRUE);
-        int actionX = editX + 110;
-        MoveWindow(run, actionX, y, 62, 29, TRUE);
-        actionX += 68;
-        MoveWindow(cancel, actionX, y, 48, 29, TRUE);
-        actionX += 54;
-        if (enableCompareGcc) {
-            MoveWindow(compareGcc, actionX, y, 100, 29, TRUE);
-            actionX += 106;
+        auto buttonWidthFor = [&](HWND control, int minimum) {
+            wchar_t text[128]{};
+            GetWindowTextW(control, text, 128);
+            HDC dc = GetDC(window);
+            HGDIOBJ oldFont = SelectObject(dc, uiFont);
+            SIZE size{};
+            GetTextExtentPoint32W(dc, text, static_cast<int>(wcslen(text)), &size);
+            SelectObject(dc, oldFont);
+            ReleaseDC(window, dc);
+            const int scaledMinimum = std::max(1, minimum * uiFontSize / 13);
+            return std::max(scaledMinimum, static_cast<int>(size.cx) + 22);
+        };
+        struct ActionButton { HWND control; int width; };
+        std::vector<ActionButton> rowOne;
+        std::vector<ActionButton> rowTwo;
+        rowOne.push_back({run, buttonWidthFor(run, 62)});
+        rowOne.push_back({cancel, buttonWidthFor(cancel, 48)});
+        if (enableCompareGcc) rowOne.push_back({compareGcc, buttonWidthFor(compareGcc, 100)});
+        rowOne.push_back({compileOutput, buttonWidthFor(compileOutput, 58)});
+        rowTwo.push_back({options, buttonWidthFor(options, 46)});
+        rowTwo.push_back({copyCli, buttonWidthFor(copyCli, 76)});
+        rowTwo.push_back({settingsButton, buttonWidthFor(settingsButton, 58)});
+        const int gap = 6;
+        const int availableAction = std::max(100, width - editX - margin);
+        auto totalWidth = [&](const std::vector<ActionButton>& row) {
+            int total = 0;
+            for (const auto& button : row) total += button.width + gap;
+            return total;
+        };
+        const int actionRows = totalWidth(rowOne) + totalWidth(rowTwo) <= availableAction ? 1 : 2;
+        int actionX = editX;
+        auto placeRow = [&](const std::vector<ActionButton>& row, int rowY) {
+            actionX = editX;
+            for (const auto& button : row) {
+                MoveWindow(button.control, actionX, rowY, button.width, 29, TRUE);
+                actionX += button.width + gap;
+            }
+        };
+        const int actionY = top + row * 3;
+        if (actionRows == 1) {
+            std::vector<ActionButton> all = rowOne;
+            all.insert(all.end(), rowTwo.begin(), rowTwo.end());
+            placeRow(all, actionY);
+        } else {
+            placeRow(rowOne, actionY);
+            placeRow(rowTwo, actionY + row);
         }
-        MoveWindow(compileOutput, actionX, y, 58, 29, TRUE);
-        actionX += 64;
-        MoveWindow(options, actionX, y, 46, 29, TRUE);
-        actionX += 52;
-        MoveWindow(copyCli, actionX, y, 76, 29, TRUE);
-        actionX += 82;
-        MoveWindow(settingsButton, actionX, y, 58, 29, TRUE);
         if (announcementVisible) {
             MoveWindow(announcementBanner, margin, 80, width - 2 * margin, 104, TRUE);
             ShowWindow(announcementBanner, SW_SHOW);
         } else {
             ShowWindow(announcementBanner, SW_HIDE);
         }
-        formRect = {margin - 8, top - 12, width - margin + 8, top + row * 4 + 12};
-        y = top + row * 4 + 24;
+        const int formRows = 4 + (actionRows - 1);
+        formRect = {margin - 8, top - 12, width - margin + 8, top + row * formRows + 12};
+        y = top + row * formRows + 24;
         outputLabelRect = {margin, y, width - margin, y + 20};
         ShowWindow(outputLabel, SW_HIDE);
         y += 22;
@@ -1182,6 +1310,12 @@ struct AppState {
                             getIni(L"agreementVersion", L"0") == L"2";
         alwaysShowAnnouncement = getIni(L"alwaysShowAnnouncement", L"1") != L"0";
         enableCompareGcc = getIni(L"enableCompareGcc", L"1") != L"0";
+        uiFontSize = std::clamp(_wtoi(getIni(L"uiFontSize", L"13").c_str()), 10, 26);
+        codeFontSize = std::clamp(_wtoi(getIni(L"codeFontSize", L"15").c_str()), 10, 28);
+        letterSpacing = std::clamp(_wtoi(getIni(L"letterSpacing", L"0").c_str()), 0, 4);
+        for (const auto& def : themeColorDefs()) {
+            *def.value = colorFromHex(getIni(def.key), *def.value);
+        }
         // Source and output start empty by design; the user must choose them
         // explicitly for every new session.
         selectedInput.clear();
@@ -1221,6 +1355,12 @@ struct AppState {
         putIni(L"keepComments", keepComments ? L"1" : L"0");
         putIni(L"alwaysShowAnnouncement", alwaysShowAnnouncement ? L"1" : L"0");
         putIni(L"enableCompareGcc", enableCompareGcc ? L"1" : L"0");
+        putIni(L"uiFontSize", std::to_wstring(uiFontSize));
+        putIni(L"codeFontSize", std::to_wstring(codeFontSize));
+        putIni(L"letterSpacing", std::to_wstring(letterSpacing));
+        for (const auto& def : themeColorDefs()) {
+            putIni(def.key, colorToHex(*def.value));
+        }
         std::wstring includes;
         for (const auto& dir : includeDirs) {
             if (!includes.empty()) includes += L"|";
@@ -1560,6 +1700,7 @@ struct AppState {
         DeleteObject(headerBrush);
 
         SetBkMode(dc, TRANSPARENT);
+        SetTextCharacterExtra(dc, letterSpacing);
         HBRUSH markBrush = CreateSolidBrush(kAccent);
         HPEN noPen = CreatePen(PS_NULL, 0, kAccent);
         HGDIOBJ oldBrush = SelectObject(dc, markBrush);
@@ -1710,6 +1851,7 @@ struct AppState {
         wchar_t text[128]{};
         GetWindowTextW(item->hwndItem, text, 128);
         SetBkMode(item->hDC, TRANSPARENT);
+        SetTextCharacterExtra(item->hDC, letterSpacing);
         SetTextColor(item->hDC, textColor);
         HFONT font = uiFont;
         HGDIOBJ oldFont = SelectObject(item->hDC, font);
@@ -1726,6 +1868,8 @@ struct AppState {
         case WM_CREATE:
             createControls();
             loadSettings();
+            rebuildFonts();
+            applyThemeColors();
             applyDisplaySettings();
             layoutForWindow();
             return 0;
@@ -1767,10 +1911,14 @@ struct AppState {
                 // Read-only EDIT controls use WM_CTLCOLORSTATIC, not
                 // WM_CTLCOLOREDIT. Returning NULL_BRUSH here makes their
                 // background transparent and leaves scroll trails.
+                const COLORREF background = control == outputView ? kOutputBackground
+                                                                   : kDiagBackground;
                 SetBkMode(dc, OPAQUE);
-                SetBkColor(dc, kPanel);
+                SetBkColor(dc, background);
                 SetTextColor(dc, kText);
-                return reinterpret_cast<LRESULT>(panelBrush);
+                return reinterpret_cast<LRESULT>(control == outputView
+                                                     ? outputBackgroundBrush
+                                                     : diagBackgroundBrush);
             }
             SetBkMode(dc, OPAQUE);
             SetBkColor(dc, control == status ? kBackground : kPanel);
@@ -1846,6 +1994,8 @@ struct AppState {
             if (codeFont) DeleteObject(codeFont);
             if (backgroundBrush) DeleteObject(backgroundBrush);
             if (panelBrush) DeleteObject(panelBrush);
+            if (outputBackgroundBrush) DeleteObject(outputBackgroundBrush);
+            if (diagBackgroundBrush) DeleteObject(diagBackgroundBrush);
             PostQuitMessage(0);
             return 0;
         }
@@ -2427,7 +2577,91 @@ struct SettingsState {
     HWND announcement = nullptr;
     HWND compare = nullptr;
     HWND reset = nullptr;
+    HWND list = nullptr;
+    HWND choose = nullptr;
+    HWND preview = nullptr;
+    HWND uiTrack = nullptr;
+    HWND codeTrack = nullptr;
+    HWND spacingTrack = nullptr;
+    HWND uiValue = nullptr;
+    HWND codeValue = nullptr;
+    HWND spacingValue = nullptr;
+    HWND fullscreen = nullptr;
+    HWND ok = nullptr;
+    HWND cancel = nullptr;
+    std::vector<COLORREF> colors;
+    COLORREF previewColor = kAccent;
+    int hotIndex = -1;
+    bool fullScreenMode = false;
+    RECT normalRect{};
 };
+
+void layoutSettings(SettingsState* state, int width, int height) {
+    if (!state || !state->window) return;
+    const int margin = 22;
+    const int listWidth = std::min(370, std::max(250, width / 3));
+    const int contentTop = 170;
+    const int contentBottom = height - 250;
+    const int listHeight = std::max(150, contentBottom - contentTop);
+    MoveWindow(state->list, margin, contentTop, listWidth, listHeight, TRUE);
+    MoveWindow(state->choose, margin, contentTop + listHeight + 8, listWidth, 32, TRUE);
+    const int previewX = margin + listWidth + 20;
+    const int previewWidth = std::max(220, width - previewX - margin);
+    MoveWindow(state->preview, previewX, contentTop, previewWidth, listHeight + 40, TRUE);
+    const int fontTop = height - 200;
+    MoveWindow(state->uiValue, margin, fontTop, 150, 20, TRUE);
+    MoveWindow(state->uiTrack, margin + 154, fontTop - 6, previewWidth + listWidth - 154, 32, TRUE);
+    MoveWindow(state->codeValue, margin, fontTop + 36, 150, 20, TRUE);
+    MoveWindow(state->codeTrack, margin + 154, fontTop + 30, previewWidth + listWidth - 154, 32, TRUE);
+    MoveWindow(state->spacingValue, margin, fontTop + 72, 150, 20, TRUE);
+    MoveWindow(state->spacingTrack, margin + 154, fontTop + 66, previewWidth + listWidth - 154, 32, TRUE);
+    MoveWindow(state->reset, margin, height - 56, 150, 34, TRUE);
+    MoveWindow(state->fullscreen, width - 344, height - 56, 100, 34, TRUE);
+    MoveWindow(state->ok, width - 232, height - 56, 96, 34, TRUE);
+    MoveWindow(state->cancel, width - 126, height - 56, 96, 34, TRUE);
+}
+
+void updateFontLabels(SettingsState* state) {
+    if (!state) return;
+    wchar_t buffer[64]{};
+    swprintf_s(buffer, L"界面字体大小：%d px", static_cast<int>(SendMessageW(state->uiTrack, TBM_GETPOS, 0, 0)));
+    SetWindowTextW(state->uiValue, buffer);
+    swprintf_s(buffer, L"代码字体大小：%d px", static_cast<int>(SendMessageW(state->codeTrack, TBM_GETPOS, 0, 0)));
+    SetWindowTextW(state->codeValue, buffer);
+    swprintf_s(buffer, L"字间距：%d px", static_cast<int>(SendMessageW(state->spacingTrack, TBM_GETPOS, 0, 0)));
+    SetWindowTextW(state->spacingValue, buffer);
+}
+
+LRESULT CALLBACK ColorListSubclass(HWND window, UINT message, WPARAM wParam,
+                                      LPARAM lParam, UINT_PTR, DWORD_PTR data) {
+    auto* state = reinterpret_cast<SettingsState*>(data);
+    if (!state) return DefSubclassProc(window, message, wParam, lParam);
+    switch (message) {
+    case WM_MOUSEMOVE: {
+        POINT point{};
+        GetCursorPos(&point);
+        ScreenToClient(window, &point);
+        const LRESULT hit = SendMessageW(window, LB_ITEMFROMPOINT, 0,
+                                         MAKELPARAM(point.x, point.y));
+        const int index = HIWORD(hit) ? -1 : static_cast<int>(LOWORD(hit));
+        if (index != state->hotIndex) {
+            state->hotIndex = index;
+            InvalidateRect(window, nullptr, TRUE);
+        }
+        TRACKMOUSEEVENT tracking{sizeof(tracking), TME_LEAVE, window, 0};
+        TrackMouseEvent(&tracking);
+        return 0;
+    }
+    case WM_MOUSELEAVE:
+        state->hotIndex = -1;
+        InvalidateRect(window, nullptr, TRUE);
+        return 0;
+    case WM_NCDESTROY:
+        RemoveWindowSubclass(window, ColorListSubclass, 1);
+        break;
+    }
+    return DefSubclassProc(window, message, wParam, lParam);
+}
 
 LRESULT CALLBACK SettingsProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
     auto* state = reinterpret_cast<SettingsState*>(GetWindowLongPtrW(window, GWLP_USERDATA));
@@ -2446,50 +2680,203 @@ LRESULT CALLBACK SettingsProc(HWND window, UINT message, WPARAM wParam, LPARAM l
         const DWORD labelStyle = WS_CHILD | WS_VISIBLE | SS_LEFT;
         const DWORD checkStyle = WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX;
         HWND title = CreateWindowExW(0, L"STATIC", L"设置", labelStyle,
-                                     26, 20, 560, 34, window, nullptr,
+                                     22, 16, 500, 34, window, nullptr,
                                      state->app->instance, nullptr);
-        HWND announcement = CreateWindowExW(0, L"BUTTON", L"每次启动展示公告",
-                                           checkStyle, 26, 70, 540, 28, window,
-                                           reinterpret_cast<HMENU>(3001),
-                                           state->app->instance, nullptr);
+        state->announcement = CreateWindowExW(0, L"BUTTON", L"每次启动展示公告",
+                                              checkStyle, 22, 58, 520, 26, window,
+                                              reinterpret_cast<HMENU>(3001),
+                                              state->app->instance, nullptr);
         HWND announcementNote = CreateWindowExW(0, L"STATIC",
             L"开启：每次启动都显示公告。关闭：手动关闭后，只有公告 ID 变化时才显示。",
-            labelStyle, 48, 98, 520, 22, window, nullptr,
-            state->app->instance, nullptr);
-        HWND compare = CreateWindowExW(0, L"BUTTON", L"显示“对比 g++ -E”按钮",
-                                      checkStyle, 26, 140, 540, 28, window,
-                                      reinterpret_cast<HMENU>(3002),
-                                      state->app->instance, nullptr);
-        HWND compareNote = CreateWindowExW(0, L"STATIC",
-            L"关闭后主界面不显示“对比 g++ -E”按钮。",
-            labelStyle, 48, 168, 520, 22, window, nullptr,
-            state->app->instance, nullptr);
-        HWND reset = CreateWindowExW(0, L"BUTTON", L"重置本地缓存",
-                                     WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-                                     26, 210, 160, 34, window,
-                                     reinterpret_cast<HMENU>(3003), state->app->instance,
-                                     nullptr);
-        HWND ok = CreateWindowExW(0, L"BUTTON", L"确定",
-                                  WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-                                  370, 230, 100, 34, window,
-                                  reinterpret_cast<HMENU>(IDOK), state->app->instance,
-                                  nullptr);
-        HWND cancel = CreateWindowExW(0, L"BUTTON", L"取消",
-                                      WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-                                      480, 230, 100, 34, window,
-                                      reinterpret_cast<HMENU>(IDCANCEL), state->app->instance,
+            labelStyle, 44, 84, 660, 20, window, nullptr, state->app->instance, nullptr);
+        state->compare = CreateWindowExW(0, L"BUTTON", L"显示“对比 g++ -E”按钮",
+                                         checkStyle, 22, 104, 520, 26, window,
+                                         reinterpret_cast<HMENU>(3002),
+                                         state->app->instance, nullptr);
+        HWND colorLabel = CreateWindowExW(0, L"STATIC", L"颜色块（Ctrl 多选；选择颜色后应用到所有选中块）",
+                                          labelStyle, 22, 136, 700, 22, window, nullptr,
+                                          state->app->instance, nullptr);
+        state->list = CreateWindowExW(WS_EX_CLIENTEDGE, WC_LISTBOXW, L"",
+                                      WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL |
+                                          LBS_OWNERDRAWFIXED | LBS_EXTENDEDSEL |
+                                          LBS_HASSTRINGS | LBS_NOTIFY,
+                                      22, 166, 350, 300, window,
+                                      reinterpret_cast<HMENU>(4001), state->app->instance,
                                       nullptr);
-        for (HWND control : {title, announcement, announcementNote, compare, compareNote, reset, ok, cancel}) {
+        state->choose = CreateWindowExW(0, L"BUTTON", L"选择颜色…",
+                                        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+                                        22, 470, 350, 32, window,
+                                        reinterpret_cast<HMENU>(4002), state->app->instance,
+                                        nullptr);
+        state->preview = CreateWindowExW(WS_EX_CLIENTEDGE, L"STATIC", L"",
+                                         WS_CHILD | WS_VISIBLE | SS_OWNERDRAW,
+                                         392, 166, 500, 440, window,
+                                         reinterpret_cast<HMENU>(4010), state->app->instance,
+                                         nullptr);
+        state->uiValue = CreateWindowExW(0, L"STATIC", L"", labelStyle,
+                                         22, 540, 150, 20, window, nullptr,
+                                         state->app->instance, nullptr);
+        state->uiTrack = CreateWindowExW(0, TRACKBAR_CLASSW, L"",
+                                         WS_CHILD | WS_VISIBLE | WS_TABSTOP | TBS_HORZ |
+                                             TBS_AUTOTICKS,
+                                         176, 534, 500, 32, window,
+                                         reinterpret_cast<HMENU>(4003), state->app->instance,
+                                         nullptr);
+        state->codeValue = CreateWindowExW(0, L"STATIC", L"", labelStyle,
+                                          22, 576, 150, 20, window, nullptr,
+                                          state->app->instance, nullptr);
+        state->codeTrack = CreateWindowExW(0, TRACKBAR_CLASSW, L"",
+                                          WS_CHILD | WS_VISIBLE | WS_TABSTOP | TBS_HORZ |
+                                              TBS_AUTOTICKS,
+                                          176, 570, 500, 32, window,
+                                          reinterpret_cast<HMENU>(4004), state->app->instance,
+                                          nullptr);
+        state->spacingValue = CreateWindowExW(0, L"STATIC", L"", labelStyle,
+                                              22, 612, 150, 20, window, nullptr,
+                                              state->app->instance, nullptr);
+        state->spacingTrack = CreateWindowExW(0, TRACKBAR_CLASSW, L"",
+                                              WS_CHILD | WS_VISIBLE | WS_TABSTOP | TBS_HORZ |
+                                                  TBS_AUTOTICKS,
+                                              176, 606, 500, 32, window,
+                                              reinterpret_cast<HMENU>(4005), state->app->instance,
+                                              nullptr);
+        state->reset = CreateWindowExW(0, L"BUTTON", L"重置本地缓存",
+                                       WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+                                       22, 690, 150, 34, window,
+                                       reinterpret_cast<HMENU>(3003), state->app->instance,
+                                       nullptr);
+        state->fullscreen = CreateWindowExW(0, L"BUTTON", L"全屏",
+                                            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+                                            700, 690, 100, 34, window,
+                                            reinterpret_cast<HMENU>(4006), state->app->instance,
+                                            nullptr);
+        state->ok = CreateWindowExW(0, L"BUTTON", L"确定",
+                                    WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+                                    810, 690, 96, 34, window,
+                                    reinterpret_cast<HMENU>(IDOK), state->app->instance,
+                                    nullptr);
+        state->cancel = CreateWindowExW(0, L"BUTTON", L"取消",
+                                        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+                                        916, 690, 96, 34, window,
+                                        reinterpret_cast<HMENU>(IDCANCEL), state->app->instance,
+                                        nullptr);
+        for (HWND control : {title, state->announcement, announcementNote, state->compare,
+                             colorLabel, state->uiValue, state->uiTrack, state->codeValue,
+                             state->codeTrack, state->spacingValue, state->spacingTrack,
+                             state->choose, state->reset, state->fullscreen, state->ok,
+                             state->cancel}) {
             SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(state->app->uiFont), TRUE);
         }
-        SendMessageW(announcement, BM_SETCHECK,
+        SendMessageW(title, WM_SETFONT, reinterpret_cast<WPARAM>(state->app->titleFont), TRUE);
+        SendMessageW(state->list, WM_SETFONT, reinterpret_cast<WPARAM>(state->app->uiFont), TRUE);
+        SetWindowSubclass(state->list, ColorListSubclass, 1,
+                          reinterpret_cast<DWORD_PTR>(state));
+        SendMessageW(state->announcement, BM_SETCHECK,
                      state->app->alwaysShowAnnouncement ? BST_CHECKED : BST_UNCHECKED, 0);
-        SendMessageW(compare, BM_SETCHECK,
+        SendMessageW(state->compare, BM_SETCHECK,
                      state->app->enableCompareGcc ? BST_CHECKED : BST_UNCHECKED, 0);
-        state->announcement = announcement;
-        state->compare = compare;
-        state->reset = reset;
+        SendMessageW(state->uiTrack, TBM_SETRANGE, TRUE, MAKELPARAM(10, 26));
+        SendMessageW(state->codeTrack, TBM_SETRANGE, TRUE, MAKELPARAM(10, 28));
+        SendMessageW(state->spacingTrack, TBM_SETRANGE, TRUE, MAKELPARAM(0, 4));
+        SendMessageW(state->uiTrack, TBM_SETPOS, TRUE, state->app->uiFontSize);
+        SendMessageW(state->codeTrack, TBM_SETPOS, TRUE, state->app->codeFontSize);
+        SendMessageW(state->spacingTrack, TBM_SETPOS, TRUE, state->app->letterSpacing);
+        updateFontLabels(state);
+        const auto defs = themeColorDefs();
+        state->colors.clear();
+        for (std::size_t i = 0; i < defs.size(); ++i) {
+            SendMessageW(state->list, LB_ADDSTRING, 0,
+                         reinterpret_cast<LPARAM>(defs[i].label));
+            state->colors.push_back(*defs[i].value);
+        }
+        SendMessageW(state->list, LB_SETSEL, TRUE, 0);
+        state->previewColor = state->colors[0];
+        RECT client{};
+        GetClientRect(window, &client);
+        layoutSettings(state, client.right - client.left, client.bottom - client.top);
         return 0;
+    }
+    case WM_SIZE: {
+        layoutSettings(state, LOWORD(lParam), HIWORD(lParam));
+        return 0;
+    }
+    case WM_MEASUREITEM: {
+        auto* measure = reinterpret_cast<MEASUREITEMSTRUCT*>(lParam);
+        if (measure && measure->CtlID == 4001) measure->itemHeight = 34;
+        return TRUE;
+    }
+    case WM_DRAWITEM: {
+        auto* item = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
+        if (!item) return TRUE;
+        if (item->CtlID == 4010) {
+            RECT client = item->rcItem;
+            HBRUSH background = CreateSolidBrush(kBackground);
+            FillRect(item->hDC, &client, background);
+            DeleteObject(background);
+            RECT card{client.left + 18, client.top + 18, client.right - 18,
+                      client.bottom - 18};
+            HBRUSH cardBrush = CreateSolidBrush(kPanel);
+            HPEN border = CreatePen(PS_SOLID, 1, kBorder);
+            HGDIOBJ oldBrush = SelectObject(item->hDC, cardBrush);
+            HGDIOBJ oldPen = SelectObject(item->hDC, border);
+            RoundRect(item->hDC, card.left, card.top, card.right, card.bottom, 12, 12);
+            SelectObject(item->hDC, oldBrush);
+            SelectObject(item->hDC, oldPen);
+            DeleteObject(cardBrush);
+            DeleteObject(border);
+            RECT swatch{card.left + 28, card.top + 28, card.right - 28,
+                        card.bottom - 72};
+            HBRUSH swatchBrush = CreateSolidBrush(state->previewColor);
+            FillRect(item->hDC, &swatch, swatchBrush);
+            DeleteObject(swatchBrush);
+            FrameRect(item->hDC, &swatch,
+                      reinterpret_cast<HBRUSH>(GetStockObject(GRAY_BRUSH)));
+            SetBkMode(item->hDC, TRANSPARENT);
+            SetTextColor(item->hDC, kMuted);
+            HGDIOBJ oldFont = SelectObject(item->hDC, state->app->uiFont);
+            const std::wstring hex = colorToHex(state->previewColor);
+            RECT text{swatch.left, swatch.bottom + 14, swatch.right, swatch.bottom + 42};
+            DrawTextW(item->hDC, hex.c_str(), -1, &text,
+                      DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+            SelectObject(item->hDC, oldFont);
+            return TRUE;
+        }
+        if (item->CtlID != 4001) return TRUE;
+        const bool selected = (item->itemState & ODS_SELECTED) != 0;
+        const int index = static_cast<int>(item->itemID);
+        const bool hot = index == state->hotIndex;
+        HBRUSH background = CreateSolidBrush(selected ? kAccentSoft
+                                                       : (hot ? RGB(240, 250, 248)
+                                                              : kPanel));
+        FillRect(item->hDC, &item->rcItem, background);
+        DeleteObject(background);
+        if (index < 0 || index >= static_cast<int>(state->colors.size())) return TRUE;
+        RECT swatch{item->rcItem.left + 8, item->rcItem.top + 7,
+                    item->rcItem.left + 28, item->rcItem.top + 27};
+        HBRUSH swatchBrush = CreateSolidBrush(state->colors[index]);
+        FillRect(item->hDC, &swatch, swatchBrush);
+        DeleteObject(swatchBrush);
+        FrameRect(item->hDC, &swatch,
+                  reinterpret_cast<HBRUSH>(GetStockObject(GRAY_BRUSH)));
+        wchar_t label[128]{};
+        SendMessageW(state->list, LB_GETTEXT, index, reinterpret_cast<LPARAM>(label));
+        SetBkMode(item->hDC, TRANSPARENT);
+        SetTextColor(item->hDC, kText);
+        HGDIOBJ oldFont = SelectObject(item->hDC, state->app->uiFont);
+        RECT text{swatch.right + 10, item->rcItem.top, item->rcItem.right - 6,
+                  item->rcItem.bottom};
+        DrawTextW(item->hDC, label, -1, &text, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+        SelectObject(item->hDC, oldFont);
+        return TRUE;
+    }
+    case WM_HSCROLL:
+        updateFontLabels(state);
+        return 0;
+    case WM_CTLCOLORSTATIC: {
+        HDC dc = reinterpret_cast<HDC>(wParam);
+        SetBkMode(dc, TRANSPARENT);
+        SetTextColor(dc, kText);
+        return reinterpret_cast<LRESULT>(state->app->backgroundBrush);
     }
     case WM_COMMAND:
         if (LOWORD(wParam) == 3003) {
@@ -2512,16 +2899,94 @@ LRESULT CALLBACK SettingsProc(HWND window, UINT message, WPARAM wParam, LPARAM l
                         L"重置本地缓存", MB_OK | MB_ICONINFORMATION);
             ExitProcess(0);
         }
+        if (LOWORD(wParam) == 4002) {
+            int count = static_cast<int>(SendMessageW(state->list, LB_GETSELCOUNT, 0, 0));
+            std::vector<int> selected;
+            if (count > 0) {
+                std::vector<int> indices(count);
+                SendMessageW(state->list, LB_GETSELITEMS, count,
+                             reinterpret_cast<LPARAM>(indices.data()));
+                for (int i = 0; i < count; ++i) selected.push_back(indices[i]);
+            } else {
+                selected.push_back(0);
+            }
+            COLORREF custom[16]{};
+            CHOOSECOLORW dialog{};
+            dialog.lStructSize = sizeof(dialog);
+            dialog.hwndOwner = window;
+            dialog.rgbResult = state->colors[selected.front()];
+            dialog.lpCustColors = custom;
+            dialog.Flags = CC_FULLOPEN | CC_ANYCOLOR | CC_RGBINIT;
+            if (ChooseColorW(&dialog)) {
+                for (int index : selected) {
+                    if (index >= 0 && index < static_cast<int>(state->colors.size())) {
+                        state->colors[index] = dialog.rgbResult;
+                    }
+                }
+                state->previewColor = dialog.rgbResult;
+                InvalidateRect(state->list, nullptr, TRUE);
+                InvalidateRect(state->preview, nullptr, TRUE);
+            }
+            return 0;
+        }
+        if (LOWORD(wParam) == 4006) {
+            if (!state->fullScreenMode) {
+                GetWindowRect(window, &state->normalRect);
+                RECT work{};
+                SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
+                SetWindowPos(window, HWND_TOP, work.left, work.top,
+                             work.right - work.left, work.bottom - work.top,
+                             SWP_SHOWWINDOW);
+                state->fullScreenMode = true;
+                SetWindowTextW(state->fullscreen, L"还原");
+            } else {
+                SetWindowPos(window, HWND_TOP, state->normalRect.left,
+                             state->normalRect.top,
+                             state->normalRect.right - state->normalRect.left,
+                             state->normalRect.bottom - state->normalRect.top,
+                             SWP_SHOWWINDOW);
+                state->fullScreenMode = false;
+                SetWindowTextW(state->fullscreen, L"全屏");
+            }
+            return 0;
+        }
+        if (LOWORD(wParam) == 4001 && HIWORD(wParam) == LBN_SELCHANGE) {
+            int index = static_cast<int>(SendMessageW(state->list, LB_GETCURSEL, 0, 0));
+            if (index >= 0 && index < static_cast<int>(state->colors.size())) {
+                state->previewColor = state->colors[index];
+                InvalidateRect(state->preview, nullptr, TRUE);
+            }
+            return 0;
+        }
         if (LOWORD(wParam) == IDOK) {
             state->app->alwaysShowAnnouncement =
                 SendMessageW(state->announcement, BM_GETCHECK, 0, 0) == BST_CHECKED;
             state->app->enableCompareGcc =
                 SendMessageW(state->compare, BM_GETCHECK, 0, 0) == BST_CHECKED;
+            state->app->uiFontSize = static_cast<int>(
+                SendMessageW(state->uiTrack, TBM_GETPOS, 0, 0));
+            state->app->codeFontSize = static_cast<int>(
+                SendMessageW(state->codeTrack, TBM_GETPOS, 0, 0));
+            state->app->letterSpacing = static_cast<int>(
+                SendMessageW(state->spacingTrack, TBM_GETPOS, 0, 0));
+            const auto defs = themeColorDefs();
+            for (std::size_t i = 0; i < defs.size(); ++i) {
+                *defs[i].value = state->colors[i];
+            }
             state->app->putIni(L"alwaysShowAnnouncement",
                                state->app->alwaysShowAnnouncement ? L"1" : L"0");
             state->app->putIni(L"enableCompareGcc",
                                state->app->enableCompareGcc ? L"1" : L"0");
+            state->app->putIni(L"uiFontSize", std::to_wstring(state->app->uiFontSize));
+            state->app->putIni(L"codeFontSize", std::to_wstring(state->app->codeFontSize));
+            state->app->putIni(L"letterSpacing", std::to_wstring(state->app->letterSpacing));
+            for (const auto& def : defs) {
+                state->app->putIni(def.key, colorToHex(*def.value));
+            }
+            state->app->applyThemeColors();
+            state->app->rebuildFonts();
             state->app->applyDisplaySettings();
+            state->app->layoutForWindow();
             if (state->app->alwaysShowAnnouncement && !state->app->announcementVisible &&
                 !state->app->announcement.title.empty() &&
                 !state->app->announcement.body.empty()) {
@@ -2553,7 +3018,7 @@ void showSettingsDialog(AppState* app) {
         windowClass.lpfnWndProc = SettingsProc;
         windowClass.hInstance = app->instance;
         windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-        windowClass.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+        windowClass.hbrBackground = app->backgroundBrush;
         windowClass.lpszClassName = L"CrucibleCppSettingsWindow";
         if (!RegisterClassExW(&windowClass)) return;
         registered = true;
@@ -2562,12 +3027,17 @@ void showSettingsDialog(AppState* app) {
     state.app = app;
     RECT parent{};
     GetWindowRect(app->window, &parent);
+    RECT work{};
+    SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
+    const int width = std::min(1180, std::max(720, static_cast<int>(work.right - work.left) - 80));
+    const int height = std::min(820, std::max(620, static_cast<int>(work.bottom - work.top) - 80));
     EnableWindow(app->window, FALSE);
     HWND dialog = CreateWindowExW(
         WS_EX_DLGMODALFRAME, L"CrucibleCppSettingsWindow", L"CrucibleCpp 设置",
-        WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_VISIBLE,
-        parent.left + 80, parent.top + 80, 620, 320,
-        app->window, nullptr, app->instance, &state);
+        WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_SIZEBOX | WS_VISIBLE,
+        work.left + std::max(20, (static_cast<int>(work.right - work.left) - width) / 2),
+        work.top + std::max(20, (static_cast<int>(work.bottom - work.top) - height) / 2),
+        width, height, app->window, nullptr, app->instance, &state);
     if (!dialog) {
         EnableWindow(app->window, TRUE);
         return;
@@ -2662,6 +3132,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
                                  FIXED_PITCH | FF_MODERN, L"Consolas");
     state.backgroundBrush = CreateSolidBrush(kBackground);
     state.panelBrush = CreateSolidBrush(kPanel);
+    state.outputBackgroundBrush = CreateSolidBrush(kOutputBackground);
+    state.diagBackgroundBrush = CreateSolidBrush(kDiagBackground);
 
     WNDCLASSEXW bannerClass{};
     bannerClass.cbSize = sizeof(bannerClass);
