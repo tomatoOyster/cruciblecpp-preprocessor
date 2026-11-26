@@ -236,6 +236,7 @@ enum ControlId : int {
     IDC_COPY_CLI,
     IDC_COMPARE_GCC,
     IDC_COMPILE_OUTPUT,
+    IDC_SETTINGS,
 };
 
 std::wstring utf8ToWide(const std::string& text) {
@@ -596,6 +597,7 @@ struct AppState {
     HWND copyCli = nullptr;
     HWND compareGcc = nullptr;
     HWND compileOutput = nullptr;
+    HWND settingsButton = nullptr;
     HWND outputView = nullptr;
     HWND diagView = nullptr;
     HWND announcementBanner = nullptr;
@@ -635,6 +637,8 @@ struct AppState {
     bool lineMarkers = true;
     bool keepComments = false;
     bool agreementAccepted = false;
+    bool alwaysShowAnnouncement = true;
+    bool enableCompareGcc = true;
     bool running = false;
     int exitCode = 0;
     std::string resultOutput;
@@ -706,6 +710,9 @@ struct AppState {
         compileOutput = CreateWindowExW(0, L"BUTTON", L"编译 .i", buttonStyle,
                                         0, 0, 10, 10, window,
                                         reinterpret_cast<HMENU>(IDC_COMPILE_OUTPUT), instance, nullptr);
+        settingsButton = CreateWindowExW(0, L"BUTTON", L"设置", buttonStyle,
+                                         0, 0, 10, 10, window,
+                                         reinterpret_cast<HMENU>(IDC_SETTINGS), instance, nullptr);
         outputView = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
                                      WS_CHILD | WS_VISIBLE | WS_VSCROLL |
                                          WS_HSCROLL | ES_MULTILINE | ES_READONLY |
@@ -744,7 +751,7 @@ struct AppState {
         for (HWND control : {input, output, gcc}) {
             SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont), TRUE);
         }
-        for (HWND control : {browseInput, browseOutput, browseGcc, detectGcc, run, cancel, options, copyCli, compareGcc, compileOutput}) {
+        for (HWND control : {browseInput, browseOutput, browseGcc, detectGcc, run, cancel, options, copyCli, compareGcc, compileOutput, settingsButton}) {
             SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont), TRUE);
         }
         SendMessageW(standard, WM_SETFONT, reinterpret_cast<WPARAM>(uiFont), TRUE);
@@ -864,6 +871,9 @@ struct AppState {
         announcementVisible = false;
         announcementHeight = 0;
         ShowWindow(announcementBanner, SW_HIDE);
+        if (!announcement.id.empty()) {
+            putIni(L"announcementLastSeen", utf8ToWide(announcement.id));
+        }
         layoutForWindow();
         InvalidateRect(window, nullptr, TRUE);
     }
@@ -898,6 +908,14 @@ struct AppState {
         }
     }
 
+    void applyDisplaySettings() {
+        if (enableCompareGcc) {
+            ShowWindow(compareGcc, SW_SHOW);
+        } else {
+            ShowWindow(compareGcc, SW_HIDE);
+        }
+    }
+
     void fetchAnnouncement() {
         if (announcementWorker.joinable()) return;
         announcementWorker = std::thread([this]() {
@@ -912,6 +930,13 @@ struct AppState {
         if (!announcement.enabled || announcement.title.empty() ||
             announcement.body.empty()) {
             return;
+        }
+        if (!alwaysShowAnnouncement) {
+            std::wstring lastSeen = getIni(L"announcementLastSeen");
+            if (lastSeen.empty()) lastSeen = getIni(L"announcementDismissed");
+            if (!announcement.id.empty() && lastSeen == utf8ToWide(announcement.id)) {
+                return;
+            }
         }
         showAnnouncement();
     }
@@ -983,13 +1008,14 @@ struct AppState {
         MoveWindow(detectGcc, editX + gccW + 8 + buttonWidth + 6, y,
                    buttonWidth + 10, 27, TRUE);
         y += row;
-        MoveWindow(standard, editX, y, 120, 200, TRUE);
-        MoveWindow(run, editX + 128, y, 72, 29, TRUE);
-        MoveWindow(cancel, editX + 206, y, 56, 29, TRUE);
-        MoveWindow(compareGcc, editX + 268, y, 96, 29, TRUE);
-        MoveWindow(compileOutput, editX + 370, y, 70, 29, TRUE);
-        MoveWindow(options, editX + 446, y, 56, 29, TRUE);
-        MoveWindow(copyCli, editX + 508, y, 96, 29, TRUE);
+        MoveWindow(standard, editX, y, 108, 200, TRUE);
+        MoveWindow(run, editX + 110, y, 62, 29, TRUE);
+        MoveWindow(cancel, editX + 178, y, 48, 29, TRUE);
+        MoveWindow(compareGcc, editX + 232, y, 100, 29, TRUE);
+        MoveWindow(compileOutput, editX + 338, y, 58, 29, TRUE);
+        MoveWindow(options, editX + 402, y, 46, 29, TRUE);
+        MoveWindow(copyCli, editX + 454, y, 76, 29, TRUE);
+        MoveWindow(settingsButton, editX + 536, y, 58, 29, TRUE);
         if (announcementVisible) {
             MoveWindow(announcementBanner, margin, 80, width - 2 * margin, 104, TRUE);
             ShowWindow(announcementBanner, SW_SHOW);
@@ -1099,6 +1125,7 @@ struct AppState {
     }
 
     void showOptions();
+    void showSettings();
     void openAnnouncementFullscreen();
 
     std::filesystem::path settingsPath() const {
@@ -1142,6 +1169,8 @@ struct AppState {
     void loadSettings() {
         agreementAccepted = getIni(L"agreement", L"0") == L"1" &&
                             getIni(L"agreementVersion", L"0") == L"2";
+        alwaysShowAnnouncement = getIni(L"alwaysShowAnnouncement", L"1") != L"0";
+        enableCompareGcc = getIni(L"enableCompareGcc", L"1") != L"0";
         // Source and output start empty by design; the user must choose them
         // explicitly for every new session.
         selectedInput.clear();
@@ -1179,6 +1208,8 @@ struct AppState {
         putIni(L"pch", std::to_wstring(static_cast<int>(pchPolicy)));
         putIni(L"lineMarkers", lineMarkers ? L"1" : L"0");
         putIni(L"keepComments", keepComments ? L"1" : L"0");
+        putIni(L"alwaysShowAnnouncement", alwaysShowAnnouncement ? L"1" : L"0");
+        putIni(L"enableCompareGcc", enableCompareGcc ? L"1" : L"0");
         std::wstring includes;
         for (const auto& dir : includeDirs) {
             if (!includes.empty()) includes += L"|";
@@ -1684,6 +1715,7 @@ struct AppState {
         case WM_CREATE:
             createControls();
             loadSettings();
+            applyDisplaySettings();
             layoutForWindow();
             return 0;
         case WM_TIMER:
@@ -1752,7 +1784,8 @@ struct AppState {
             case IDC_RUN: startRun(); return 0;
             case IDC_CANCEL: cancelRequested.store(true); setText(status, L"正在取消…"); return 0;
             case IDC_OPTIONS: showOptions(); return 0;
-            case IDC_COMPARE_GCC: startAux(1); return 0;
+            case IDC_COMPARE_GCC: if (enableCompareGcc) startAux(1); return 0;
+            case IDC_SETTINGS: showSettings(); return 0;
             case IDC_COMPILE_OUTPUT: startAux(2); return 0;
             case IDC_COPY_CLI:
                 copyToClipboard(buildCliCommand());
@@ -2375,6 +2408,146 @@ void showAnnouncementFullscreen(AppState* app) {
 
 void AppState::openAnnouncementFullscreen() {
     showAnnouncementFullscreen(this);
+}
+
+struct SettingsState {
+    AppState* app = nullptr;
+    HWND window = nullptr;
+    HWND announcement = nullptr;
+    HWND compare = nullptr;
+};
+
+LRESULT CALLBACK SettingsProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+    auto* state = reinterpret_cast<SettingsState*>(GetWindowLongPtrW(window, GWLP_USERDATA));
+    if (!state) {
+        if (message == WM_NCCREATE) {
+            auto* create = reinterpret_cast<CREATESTRUCTW*>(lParam);
+            state = static_cast<SettingsState*>(create->lpCreateParams);
+            state->window = window;
+            SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(state));
+        } else {
+            return DefWindowProcW(window, message, wParam, lParam);
+        }
+    }
+    switch (message) {
+    case WM_CREATE: {
+        const DWORD labelStyle = WS_CHILD | WS_VISIBLE | SS_LEFT;
+        const DWORD checkStyle = WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX;
+        HWND title = CreateWindowExW(0, L"STATIC", L"设置", labelStyle,
+                                     26, 20, 560, 34, window, nullptr,
+                                     state->app->instance, nullptr);
+        HWND announcement = CreateWindowExW(0, L"BUTTON", L"每次启动展示公告",
+                                           checkStyle, 26, 70, 540, 28, window,
+                                           reinterpret_cast<HMENU>(3001),
+                                           state->app->instance, nullptr);
+        HWND announcementNote = CreateWindowExW(0, L"STATIC",
+            L"开启：每次启动都显示公告。关闭：手动关闭后，只有公告 ID 变化时才显示。",
+            labelStyle, 48, 98, 520, 22, window, nullptr,
+            state->app->instance, nullptr);
+        HWND compare = CreateWindowExW(0, L"BUTTON", L"显示“对比 g++ -E”按钮",
+                                      checkStyle, 26, 140, 540, 28, window,
+                                      reinterpret_cast<HMENU>(3002),
+                                      state->app->instance, nullptr);
+        HWND compareNote = CreateWindowExW(0, L"STATIC",
+            L"关闭后主界面不显示“对比 g++ -E”按钮。",
+            labelStyle, 48, 168, 520, 22, window, nullptr,
+            state->app->instance, nullptr);
+        HWND ok = CreateWindowExW(0, L"BUTTON", L"确定",
+                                  WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+                                  370, 230, 100, 34, window,
+                                  reinterpret_cast<HMENU>(IDOK), state->app->instance,
+                                  nullptr);
+        HWND cancel = CreateWindowExW(0, L"BUTTON", L"取消",
+                                      WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+                                      480, 230, 100, 34, window,
+                                      reinterpret_cast<HMENU>(IDCANCEL), state->app->instance,
+                                      nullptr);
+        for (HWND control : {title, announcement, announcementNote, compare, compareNote, ok, cancel}) {
+            SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(state->app->uiFont), TRUE);
+        }
+        SendMessageW(announcement, BM_SETCHECK,
+                     state->app->alwaysShowAnnouncement ? BST_CHECKED : BST_UNCHECKED, 0);
+        SendMessageW(compare, BM_SETCHECK,
+                     state->app->enableCompareGcc ? BST_CHECKED : BST_UNCHECKED, 0);
+        state->announcement = announcement;
+        state->compare = compare;
+        return 0;
+    }
+    case WM_COMMAND:
+        if (LOWORD(wParam) == IDOK) {
+            state->app->alwaysShowAnnouncement =
+                SendMessageW(state->announcement, BM_GETCHECK, 0, 0) == BST_CHECKED;
+            state->app->enableCompareGcc =
+                SendMessageW(state->compare, BM_GETCHECK, 0, 0) == BST_CHECKED;
+            state->app->putIni(L"alwaysShowAnnouncement",
+                               state->app->alwaysShowAnnouncement ? L"1" : L"0");
+            state->app->putIni(L"enableCompareGcc",
+                               state->app->enableCompareGcc ? L"1" : L"0");
+            state->app->applyDisplaySettings();
+            if (state->app->alwaysShowAnnouncement && !state->app->announcementVisible &&
+                !state->app->announcement.title.empty() &&
+                !state->app->announcement.body.empty()) {
+                state->app->showAnnouncement();
+            }
+            DestroyWindow(window);
+            return 0;
+        }
+        if (LOWORD(wParam) == IDCANCEL) {
+            DestroyWindow(window);
+            return 0;
+        }
+        break;
+    case WM_CLOSE:
+        DestroyWindow(window);
+        return 0;
+    case WM_NCDESTROY:
+        SetWindowLongPtrW(window, GWLP_USERDATA, 0);
+        return 0;
+    }
+    return DefWindowProcW(window, message, wParam, lParam);
+}
+
+void showSettingsDialog(AppState* app) {
+    static bool registered = false;
+    if (!registered) {
+        WNDCLASSEXW windowClass{};
+        windowClass.cbSize = sizeof(windowClass);
+        windowClass.lpfnWndProc = SettingsProc;
+        windowClass.hInstance = app->instance;
+        windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+        windowClass.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+        windowClass.lpszClassName = L"CrucibleCppSettingsWindow";
+        if (!RegisterClassExW(&windowClass)) return;
+        registered = true;
+    }
+    SettingsState state;
+    state.app = app;
+    RECT parent{};
+    GetWindowRect(app->window, &parent);
+    EnableWindow(app->window, FALSE);
+    HWND dialog = CreateWindowExW(
+        WS_EX_DLGMODALFRAME, L"CrucibleCppSettingsWindow", L"CrucibleCpp 设置",
+        WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_VISIBLE,
+        parent.left + 80, parent.top + 80, 620, 320,
+        app->window, nullptr, app->instance, &state);
+    if (!dialog) {
+        EnableWindow(app->window, TRUE);
+        return;
+    }
+    UpdateWindow(dialog);
+    MSG message{};
+    while (IsWindow(dialog) && GetMessageW(&message, nullptr, 0, 0)) {
+        if (!IsDialogMessageW(dialog, &message)) {
+            TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+    }
+    EnableWindow(app->window, TRUE);
+    SetForegroundWindow(app->window);
+}
+
+void AppState::showSettings() {
+    showSettingsDialog(this);
 }
 
 AppState* stateFrom(HWND window) {
