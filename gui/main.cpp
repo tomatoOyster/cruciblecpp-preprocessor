@@ -11,6 +11,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
+#include <cstring>
 #include <atomic>
 #include <cstdint>
 #include <filesystem>
@@ -676,8 +678,10 @@ void syncPickerFromSelection(AppState* app);
 void applyPickerColor(AppState* app);
 LRESULT CALLBACK ColorOverlayProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
-constexpr wchar_t kSettingsRegistryKey[] = L"Software\\CrucibleCpp\\Settings";
-constexpr wchar_t kAppearanceRegistryKey[] = L"Software\\CrucibleCpp\\Appearance";
+constexpr wchar_t kStateRegistryKey[] = L"Software\\CrucibleCpp\\State";
+constexpr wchar_t kStateValue[] = L"Blob";
+constexpr uint32_t kStateMagic = 0x54534343u; // 'CCST'
+constexpr uint32_t kStateVersion = 1;
 
 struct SettingsState;
 
@@ -775,6 +779,8 @@ struct AppState {
     int uiFontSize = 13;
     int codeFontSize = 15;
     int letterSpacing = 0;
+    mutable std::map<std::wstring, std::wstring> stateValues;
+    mutable bool stateLoaded = false;
 
     void createControls() {
         const DWORD editStyle = WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL;
@@ -1367,59 +1373,112 @@ struct AppState {
         return base / L"settings.ini";
     }
 
-    std::wstring getIni(const wchar_t* key, const wchar_t* fallback = L"") const {
+    void loadStateStore() const {
+        if (stateLoaded) return;
+        stateLoaded = true;
         HKEY handle = nullptr;
-        if (RegOpenKeyExW(HKEY_CURRENT_USER, kSettingsRegistryKey, 0,
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, kStateRegistryKey, 0,
                           KEY_QUERY_VALUE, &handle) != ERROR_SUCCESS) {
-            return fallback;
+            return;
         }
-        wchar_t buffer[32768]{};
-        DWORD size = static_cast<DWORD>(sizeof(buffer));
         DWORD type = 0;
-        const LONG result = RegQueryValueExW(
-            handle, key, nullptr, &type, reinterpret_cast<BYTE*>(buffer), &size);
-        RegCloseKey(handle);
-        if (result != ERROR_SUCCESS ||
-            (type != REG_SZ && type != REG_EXPAND_SZ)) {
-            return fallback;
+        DWORD size = 0;
+        LONG result = RegQueryValueExW(handle, kStateValue, nullptr, &type,
+                                       nullptr, &size);
+        if (result != ERROR_SUCCESS || type != REG_BINARY || size == 0) {
+            RegCloseKey(handle);
+            return;
         }
-        buffer[(std::size(buffer) - 1)] = L'\0';
-        return buffer;
+        std::vector<BYTE> data(size);
+        result = RegQueryValueExW(handle, kStateValue, nullptr, &type,
+                                  data.data(), &size);
+        RegCloseKey(handle);
+        if (result != ERROR_SUCCESS || size < 12) return;
+        const BYTE* cursor = data.data();
+        std::size_t remaining = size;
+        auto readU32 = [&](uint32_t& value) {
+            if (remaining < sizeof(value)) return false;
+            std::memcpy(&value, cursor, sizeof(value));
+            cursor += sizeof(value);
+            remaining -= sizeof(value);
+            return true;
+        };
+        uint32_t magic = 0, version = 0, count = 0;
+        if (!readU32(magic) || !readU32(version) || !readU32(count) ||
+            magic != kStateMagic || version != kStateVersion || count > 4096) {
+            return;
+        }
+        for (uint32_t i = 0; i < count; ++i) {
+            uint32_t keyLength = 0, valueLength = 0;
+            if (!readU32(keyLength) || !readU32(valueLength) ||
+                keyLength > 4096 || valueLength > 1024 * 1024) {
+                break;
+            }
+            const std::size_t keyBytes =
+                static_cast<std::size_t>(keyLength) * sizeof(wchar_t);
+            const std::size_t valueBytes =
+                static_cast<std::size_t>(valueLength) * sizeof(wchar_t);
+            if (remaining < keyBytes + valueBytes) break;
+            std::wstring key(keyLength, L'\0');
+            std::wstring value(valueLength, L'\0');
+            if (keyBytes) std::memcpy(key.data(), cursor, keyBytes);
+            cursor += keyBytes;
+            remaining -= keyBytes;
+            if (valueBytes) std::memcpy(value.data(), cursor, valueBytes);
+            cursor += valueBytes;
+            remaining -= valueBytes;
+            stateValues[key] = std::move(value);
+        }
     }
 
-    void putIni(const wchar_t* key, const std::wstring& value) const {
+    void flushStateStore() const {
+        std::vector<BYTE> data;
+        auto appendU32 = [&](uint32_t value) {
+            const BYTE* bytes = reinterpret_cast<const BYTE*>(&value);
+            data.insert(data.end(), bytes, bytes + sizeof(value));
+        };
+        appendU32(kStateMagic);
+        appendU32(kStateVersion);
+        appendU32(static_cast<uint32_t>(stateValues.size()));
+        for (const auto& [key, value] : stateValues) {
+            appendU32(static_cast<uint32_t>(key.size()));
+            appendU32(static_cast<uint32_t>(value.size()));
+            const BYTE* keyBytes = reinterpret_cast<const BYTE*>(key.data());
+            data.insert(data.end(), keyBytes,
+                        keyBytes + key.size() * sizeof(wchar_t));
+            const BYTE* valueBytes = reinterpret_cast<const BYTE*>(value.data());
+            data.insert(data.end(), valueBytes,
+                        valueBytes + value.size() * sizeof(wchar_t));
+        }
         HKEY handle = nullptr;
-        if (RegCreateKeyExW(HKEY_CURRENT_USER, kSettingsRegistryKey, 0, nullptr,
-                            0, KEY_WRITE, nullptr, &handle, nullptr) !=
+        if (RegCreateKeyExW(HKEY_CURRENT_USER, kStateRegistryKey, 0, nullptr, 0,
+                            KEY_WRITE, nullptr, &handle, nullptr) !=
             ERROR_SUCCESS) {
             return;
         }
-        RegSetValueExW(handle, key, 0, REG_SZ,
-                       reinterpret_cast<const BYTE*>(value.c_str()),
-                       static_cast<DWORD>((value.size() + 1) * sizeof(wchar_t)));
+        RegSetValueExW(handle, kStateValue, 0, REG_BINARY, data.data(),
+                       static_cast<DWORD>(data.size()));
         RegCloseKey(handle);
     }
 
-    void recordLaunch() const {
-        HKEY handle = nullptr;
-        if (RegCreateKeyExW(HKEY_CURRENT_USER, kSettingsRegistryKey, 0, nullptr,
-                            0, KEY_READ | KEY_WRITE, nullptr, &handle, nullptr) !=
-            ERROR_SUCCESS) {
-            return;
-        }
-        DWORD launches = 0;
-        DWORD size = sizeof(launches);
-        DWORD type = 0;
-        if (RegQueryValueExW(handle, L"launches", nullptr, &type,
-                             reinterpret_cast<BYTE*>(&launches), &size) !=
-                ERROR_SUCCESS ||
-            type != REG_DWORD) {
-            launches = 0;
-        }
-        ++launches;
-        RegSetValueExW(handle, L"launches", 0, REG_DWORD,
-                       reinterpret_cast<const BYTE*>(&launches), sizeof(launches));
-        RegCloseKey(handle);
+    std::wstring getIni(const wchar_t* key, const wchar_t* fallback = L"") const {
+        loadStateStore();
+        const auto found = stateValues.find(key);
+        return found == stateValues.end() ? fallback : found->second;
+    }
+
+    void putIni(const wchar_t* key, const std::wstring& value) {
+        loadStateStore();
+        stateValues[key] = value;
+        flushStateStore();
+    }
+
+    void recordLaunch() {
+        loadStateStore();
+        std::wstring& value = stateValues[L"launches"];
+        const unsigned long long previous = _wcstoui64(value.c_str(), nullptr, 10);
+        value = std::to_wstring(previous + 1);
+        flushStateStore();
     }
 
     void loadSettings() {
@@ -1433,7 +1492,6 @@ struct AppState {
         for (const auto& def : themeColorDefs()) {
             *def.value = colorFromHex(getIni(def.key), *def.value);
         }
-        loadAppearanceFromRegistry();
         // Source and output start empty by design; the user must choose them
         // explicitly for every new session.
         selectedInput.clear();
@@ -1462,7 +1520,7 @@ struct AppState {
         }
     }
 
-    void saveSettings() const {
+    void saveSettings() {
         putIni(L"input", selectedInput);
         putIni(L"output", selectedOutput);
         putIni(L"gcc", selectedGcc);
@@ -1491,68 +1549,6 @@ struct AppState {
         }
         putIni(L"includes", includes);
         putIni(L"defines", defines);
-        saveAppearanceToRegistry();
-    }
-
-    void saveAppearanceToRegistry() const {
-        HKEY key = nullptr;
-        if (RegCreateKeyExW(HKEY_CURRENT_USER, kAppearanceRegistryKey, 0, nullptr, 0,
-                            KEY_WRITE | KEY_QUERY_VALUE, nullptr, &key,
-                            nullptr) != ERROR_SUCCESS) {
-            return;
-        }
-        auto setDword = [&](const wchar_t* name, int value) {
-            DWORD data = static_cast<DWORD>(value);
-            RegSetValueExW(key, name, 0, REG_DWORD,
-                           reinterpret_cast<const BYTE*>(&data), sizeof(data));
-        };
-        setDword(L"uiFontSize", uiFontSize);
-        setDword(L"codeFontSize", codeFontSize);
-        setDword(L"letterSpacing", letterSpacing);
-        for (const auto& def : themeColorDefs()) {
-            const std::wstring hex = colorToHex(*def.value);
-            RegSetValueExW(key, def.key, 0, REG_SZ,
-                           reinterpret_cast<const BYTE*>(hex.c_str()),
-                           static_cast<DWORD>((hex.size() + 1) * sizeof(wchar_t)));
-        }
-        RegCloseKey(key);
-    }
-
-    void loadAppearanceFromRegistry() {
-        HKEY key = nullptr;
-        if (RegOpenKeyExW(HKEY_CURRENT_USER, kAppearanceRegistryKey, 0,
-                          KEY_QUERY_VALUE, &key) != ERROR_SUCCESS) {
-            return;
-        }
-        auto readDword = [&](const wchar_t* name, int& value) {
-            DWORD data = 0;
-            DWORD size = sizeof(data);
-            DWORD type = 0;
-            if (RegQueryValueExW(key, name, nullptr, &type,
-                                 reinterpret_cast<BYTE*>(&data), &size) ==
-                    ERROR_SUCCESS &&
-                type == REG_DWORD) {
-                value = static_cast<int>(data);
-            }
-        };
-        readDword(L"uiFontSize", uiFontSize);
-        readDword(L"codeFontSize", codeFontSize);
-        readDword(L"letterSpacing", letterSpacing);
-        uiFontSize = std::clamp(uiFontSize, 10, 26);
-        codeFontSize = std::clamp(codeFontSize, 10, 28);
-        letterSpacing = std::clamp(letterSpacing, 0, 4);
-        for (const auto& def : themeColorDefs()) {
-            wchar_t buffer[32]{};
-            DWORD size = static_cast<DWORD>(sizeof(buffer));
-            DWORD type = 0;
-            if (RegQueryValueExW(key, def.key, nullptr, &type,
-                                 reinterpret_cast<BYTE*>(buffer), &size) ==
-                    ERROR_SUCCESS &&
-                type == REG_SZ) {
-                *def.value = colorFromHex(buffer, *def.value);
-            }
-        }
-        RegCloseKey(key);
     }
 
     std::wstring buildCliCommand() {
@@ -3195,7 +3191,6 @@ LRESULT CALLBACK SettingsProc(HWND window, UINT message, WPARAM wParam, LPARAM l
         state->app->putIni(L"uiFontSize", std::to_wstring(state->app->uiFontSize));
         state->app->putIni(L"codeFontSize", std::to_wstring(state->app->codeFontSize));
         state->app->putIni(L"letterSpacing", std::to_wstring(state->app->letterSpacing));
-        state->app->saveAppearanceToRegistry();
         state->app->rebuildFonts();
         return 0;
     case WM_CTLCOLORSTATIC: {
