@@ -678,11 +678,6 @@ void syncPickerFromSelection(AppState* app);
 void applyPickerColor(AppState* app);
 LRESULT CALLBACK ColorOverlayProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
-constexpr wchar_t kStateRegistryKey[] = L"Software\\CrucibleCpp\\State";
-constexpr wchar_t kStateValue[] = L"Blob";
-constexpr uint32_t kStateMagic = 0x54534343u; // 'CCST'
-constexpr uint32_t kStateVersion = 1;
-
 struct SettingsState;
 
 struct AppState {
@@ -1373,92 +1368,95 @@ struct AppState {
         return base / L"settings.ini";
     }
 
+    static std::wstring unescapeStateValue(const std::wstring& value) {
+        std::wstring result;
+        result.reserve(value.size());
+        for (std::size_t i = 0; i < value.size(); ++i) {
+            if (value[i] != L'\\' || i + 1 >= value.size()) {
+                result.push_back(value[i]);
+                continue;
+            }
+            const wchar_t next = value[++i];
+            if (next == L'n') result.push_back(L'\n');
+            else if (next == L'r') result.push_back(L'\r');
+            else if (next == L'\\') result.push_back(L'\\');
+            else {
+                result.push_back(L'\\');
+                result.push_back(next);
+            }
+        }
+        return result;
+    }
+
+    static std::wstring escapeStateValue(const std::wstring& value) {
+        std::wstring result;
+        result.reserve(value.size());
+        for (wchar_t ch : value) {
+            if (ch == L'\\') result += L"\\\\";
+            else if (ch == L'\n') result += L"\\n";
+            else if (ch == L'\r') result += L"\\r";
+            else result.push_back(ch);
+        }
+        return result;
+    }
+
     void loadStateStore() const {
         if (stateLoaded) return;
         stateLoaded = true;
-        HKEY handle = nullptr;
-        if (RegOpenKeyExW(HKEY_CURRENT_USER, kStateRegistryKey, 0,
-                          KEY_QUERY_VALUE, &handle) != ERROR_SUCCESS) {
-            return;
+        std::ifstream file(settingsPath(), std::ios::binary);
+        if (!file) return;
+        std::string bytes((std::istreambuf_iterator<char>(file)),
+                          std::istreambuf_iterator<char>());
+        if (bytes.size() >= 3 && static_cast<unsigned char>(bytes[0]) == 0xEF &&
+            static_cast<unsigned char>(bytes[1]) == 0xBB &&
+            static_cast<unsigned char>(bytes[2]) == 0xBF) {
+            bytes.erase(0, 3);
         }
-        DWORD type = 0;
-        DWORD size = 0;
-        LONG result = RegQueryValueExW(handle, kStateValue, nullptr, &type,
-                                       nullptr, &size);
-        if (result != ERROR_SUCCESS || type != REG_BINARY || size == 0) {
-            RegCloseKey(handle);
-            return;
-        }
-        std::vector<BYTE> data(size);
-        result = RegQueryValueExW(handle, kStateValue, nullptr, &type,
-                                  data.data(), &size);
-        RegCloseKey(handle);
-        if (result != ERROR_SUCCESS || size < 12) return;
-        const BYTE* cursor = data.data();
-        std::size_t remaining = size;
-        auto readU32 = [&](uint32_t& value) {
-            if (remaining < sizeof(value)) return false;
-            std::memcpy(&value, cursor, sizeof(value));
-            cursor += sizeof(value);
-            remaining -= sizeof(value);
-            return true;
-        };
-        uint32_t magic = 0, version = 0, count = 0;
-        if (!readU32(magic) || !readU32(version) || !readU32(count) ||
-            magic != kStateMagic || version != kStateVersion || count > 4096) {
-            return;
-        }
-        for (uint32_t i = 0; i < count; ++i) {
-            uint32_t keyLength = 0, valueLength = 0;
-            if (!readU32(keyLength) || !readU32(valueLength) ||
-                keyLength > 4096 || valueLength > 1024 * 1024) {
-                break;
-            }
-            const std::size_t keyBytes =
-                static_cast<std::size_t>(keyLength) * sizeof(wchar_t);
-            const std::size_t valueBytes =
-                static_cast<std::size_t>(valueLength) * sizeof(wchar_t);
-            if (remaining < keyBytes + valueBytes) break;
-            std::wstring key(keyLength, L'\0');
-            std::wstring value(valueLength, L'\0');
-            if (keyBytes) std::memcpy(key.data(), cursor, keyBytes);
-            cursor += keyBytes;
-            remaining -= keyBytes;
-            if (valueBytes) std::memcpy(value.data(), cursor, valueBytes);
-            cursor += valueBytes;
-            remaining -= valueBytes;
-            stateValues[key] = std::move(value);
+        const std::wstring text = utf8ToWide(bytes);
+        std::wstringstream stream(text);
+        std::wstring line;
+        while (std::getline(stream, line)) {
+            if (line.empty() || line[0] == L'[' || line[0] == L'#') continue;
+            const std::size_t equals = line.find(L'=');
+            if (equals == std::wstring::npos) continue;
+            const std::wstring key = line.substr(0, equals);
+            if (key.empty()) continue;
+            stateValues[key] = unescapeStateValue(line.substr(equals + 1));
         }
     }
 
-    void flushStateStore() const {
-        std::vector<BYTE> data;
-        auto appendU32 = [&](uint32_t value) {
-            const BYTE* bytes = reinterpret_cast<const BYTE*>(&value);
-            data.insert(data.end(), bytes, bytes + sizeof(value));
-        };
-        appendU32(kStateMagic);
-        appendU32(kStateVersion);
-        appendU32(static_cast<uint32_t>(stateValues.size()));
+    bool flushStateStore() const {
+        std::wstring text = L"[gui]\n";
         for (const auto& [key, value] : stateValues) {
-            appendU32(static_cast<uint32_t>(key.size()));
-            appendU32(static_cast<uint32_t>(value.size()));
-            const BYTE* keyBytes = reinterpret_cast<const BYTE*>(key.data());
-            data.insert(data.end(), keyBytes,
-                        keyBytes + key.size() * sizeof(wchar_t));
-            const BYTE* valueBytes = reinterpret_cast<const BYTE*>(value.data());
-            data.insert(data.end(), valueBytes,
-                        valueBytes + value.size() * sizeof(wchar_t));
+            text += key + L"=" + escapeStateValue(value) + L"\n";
         }
-        HKEY handle = nullptr;
-        if (RegCreateKeyExW(HKEY_CURRENT_USER, kStateRegistryKey, 0, nullptr, 0,
-                            KEY_WRITE, nullptr, &handle, nullptr) !=
-            ERROR_SUCCESS) {
-            return;
+        const std::string bytes = wideToUtf8(text);
+        const std::filesystem::path target = settingsPath();
+        const std::filesystem::path temporary = target.parent_path() / L"settings.tmp";
+        {
+            std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
+            if (!file) {
+                std::ofstream direct(target, std::ios::binary | std::ios::trunc);
+                if (!direct) return false;
+                direct.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+                direct.flush();
+                return static_cast<bool>(direct);
+            }
+            file.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+            file.flush();
+            if (!file) return false;
         }
-        RegSetValueExW(handle, kStateValue, 0, REG_BINARY, data.data(),
-                       static_cast<DWORD>(data.size()));
-        RegCloseKey(handle);
+        if (!MoveFileExW(temporary.c_str(), target.c_str(),
+                         MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+            std::error_code error;
+            std::filesystem::remove(temporary, error);
+            std::ofstream direct(target, std::ios::binary | std::ios::trunc);
+            if (!direct) return false;
+            direct.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+            direct.flush();
+            return static_cast<bool>(direct);
+        }
+        return true;
     }
 
     std::wstring getIni(const wchar_t* key, const wchar_t* fallback = L"") const {
@@ -3287,15 +3285,10 @@ LRESULT CALLBACK SettingsProc(HWND window, UINT message, WPARAM wParam, LPARAM l
                             MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES) {
                 return 0;
             }
-            const LONG resetResult = RegDeleteTreeW(
-                HKEY_CURRENT_USER, L"Software\\CrucibleCpp");
-            std::error_code cleanupError;
-            std::filesystem::remove_all(state->app->settingsPath().parent_path(), cleanupError);
-            if (resetResult != ERROR_SUCCESS &&
-                resetResult != ERROR_FILE_NOT_FOUND) {
-                MessageBoxW(window,
-                            (L"清空设置失败，注册表错误 " +
-                             std::to_wstring(resetResult)).c_str(),
+            state->app->stateValues.clear();
+            state->app->stateLoaded = true;
+            if (!state->app->flushStateStore()) {
+                MessageBoxW(window, L"无法写入配置文件，请检查文件是否被占用。",
                             L"重置本地缓存", MB_OK | MB_ICONERROR);
                 return 0;
             }
