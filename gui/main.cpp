@@ -639,6 +639,7 @@ struct AppState {
     bool agreementAccepted = false;
     bool alwaysShowAnnouncement = true;
     bool enableCompareGcc = true;
+    bool skipSaveOnExit = false;
     bool running = false;
     int exitCode = 0;
     std::string resultOutput;
@@ -1835,7 +1836,7 @@ struct AppState {
             if (announcementWorker.joinable()) announcementWorker.detach();
             KillTimer(window, 1);
             KillTimer(window, 2);
-            saveSettings();
+            if (!skipSaveOnExit) saveSettings();
             if (uiFont) DeleteObject(uiFont);
             if (titleFont) DeleteObject(titleFont);
             if (subtitleFont) DeleteObject(subtitleFont);
@@ -2425,6 +2426,7 @@ struct SettingsState {
     HWND window = nullptr;
     HWND announcement = nullptr;
     HWND compare = nullptr;
+    HWND reset = nullptr;
 };
 
 LRESULT CALLBACK SettingsProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -2462,6 +2464,11 @@ LRESULT CALLBACK SettingsProc(HWND window, UINT message, WPARAM wParam, LPARAM l
             L"关闭后主界面不显示“对比 g++ -E”按钮。",
             labelStyle, 48, 168, 520, 22, window, nullptr,
             state->app->instance, nullptr);
+        HWND reset = CreateWindowExW(0, L"BUTTON", L"重置本地缓存",
+                                     WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+                                     26, 210, 160, 34, window,
+                                     reinterpret_cast<HMENU>(3003), state->app->instance,
+                                     nullptr);
         HWND ok = CreateWindowExW(0, L"BUTTON", L"确定",
                                   WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
                                   370, 230, 100, 34, window,
@@ -2472,7 +2479,7 @@ LRESULT CALLBACK SettingsProc(HWND window, UINT message, WPARAM wParam, LPARAM l
                                       480, 230, 100, 34, window,
                                       reinterpret_cast<HMENU>(IDCANCEL), state->app->instance,
                                       nullptr);
-        for (HWND control : {title, announcement, announcementNote, compare, compareNote, ok, cancel}) {
+        for (HWND control : {title, announcement, announcementNote, compare, compareNote, reset, ok, cancel}) {
             SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(state->app->uiFont), TRUE);
         }
         SendMessageW(announcement, BM_SETCHECK,
@@ -2481,9 +2488,32 @@ LRESULT CALLBACK SettingsProc(HWND window, UINT message, WPARAM wParam, LPARAM l
                      state->app->enableCompareGcc ? BST_CHECKED : BST_UNCHECKED, 0);
         state->announcement = announcement;
         state->compare = compare;
+        state->reset = reset;
         return 0;
     }
     case WM_COMMAND:
+        if (LOWORD(wParam) == 3003) {
+            if (MessageBoxW(window,
+                            L"此操作会导致设置选项清空，用户协议状态清空，软件启动计数器清空！",
+                            L"重置本地缓存",
+                            MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES) {
+                return 0;
+            }
+            std::error_code error;
+            const std::filesystem::path directory = state->app->settingsPath().parent_path();
+            std::filesystem::remove_all(directory, error);
+            if (error) {
+                MessageBoxW(window, L"删除本地缓存失败，请检查文件权限。",
+                            L"重置本地缓存", MB_OK | MB_ICONERROR);
+                return 0;
+            }
+            state->app->skipSaveOnExit = true;
+            MessageBoxW(window, L"本地缓存已清空，软件将退出。",
+                        L"重置本地缓存", MB_OK | MB_ICONINFORMATION);
+            DestroyWindow(window);
+            PostMessageW(state->app->window, WM_CLOSE, 0, 0);
+            return 0;
+        }
         if (LOWORD(wParam) == IDOK) {
             state->app->alwaysShowAnnouncement =
                 SendMessageW(state->announcement, BM_GETCHECK, 0, 0) == BST_CHECKED;
