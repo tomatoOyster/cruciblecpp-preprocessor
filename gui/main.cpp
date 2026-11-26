@@ -3721,14 +3721,6 @@ bool performPendingCacheReset(std::wstring& errorText) {
 } // namespace
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
-    HANDLE instanceMutex = CreateMutexW(nullptr, TRUE,
-                                        L"Local\\CrucibleCppGuiSingleInstance");
-    if (GetLastError() == ERROR_ALREADY_EXISTS) {
-        MessageBoxW(nullptr, L"CrucibleCpp GUI 已经在运行。",
-                    L"CrucibleCpp GUI", MB_OK | MB_ICONINFORMATION);
-        if (instanceMutex) CloseHandle(instanceMutex);
-        return 0;
-    }
     {
         std::wstring resetError;
         if (!performPendingCacheReset(resetError)) {
