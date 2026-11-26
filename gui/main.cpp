@@ -678,6 +678,49 @@ void syncPickerFromSelection(AppState* app);
 void applyPickerColor(AppState* app);
 LRESULT CALLBACK ColorOverlayProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
+constexpr wchar_t kSettingsRegistryKey[] = L"Software\\CrucibleCpp\\Settings";
+constexpr wchar_t kResetRegistryKey[] = L"Software\\CrucibleCppReset";
+constexpr wchar_t kResetValue[] = L"Pending";
+
+bool requestResetMarker() {
+    HKEY key = nullptr;
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, kResetRegistryKey, 0, nullptr, 0,
+                        KEY_WRITE, nullptr, &key, nullptr) != ERROR_SUCCESS) {
+        return false;
+    }
+    const DWORD enabled = 1;
+    const LONG result = RegSetValueExW(
+        key, kResetValue, 0, REG_DWORD,
+        reinterpret_cast<const BYTE*>(&enabled), sizeof(enabled));
+    RegCloseKey(key);
+    return result == ERROR_SUCCESS;
+}
+
+bool hasResetMarker() {
+    HKEY key = nullptr;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, kResetRegistryKey, 0,
+                      KEY_QUERY_VALUE, &key) != ERROR_SUCCESS) {
+        return false;
+    }
+    DWORD value = 0;
+    DWORD size = sizeof(value);
+    DWORD type = 0;
+    const LONG result = RegQueryValueExW(
+        key, kResetValue, nullptr, &type,
+        reinterpret_cast<BYTE*>(&value), &size);
+    RegCloseKey(key);
+    return result == ERROR_SUCCESS && type == REG_DWORD && value != 0;
+}
+
+void clearResetMarker() {
+    HKEY key = nullptr;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, kResetRegistryKey, 0,
+                      KEY_SET_VALUE, &key) == ERROR_SUCCESS) {
+        RegDeleteValueW(key, kResetValue);
+        RegCloseKey(key);
+    }
+}
+
 struct SettingsState;
 
 struct AppState {
@@ -1400,9 +1443,49 @@ struct AppState {
         return result;
     }
 
+    void loadRegistryValues() const {
+        HKEY key = nullptr;
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, kSettingsRegistryKey, 0,
+                          KEY_QUERY_VALUE, &key) != ERROR_SUCCESS) return;
+        DWORD index = 0;
+        wchar_t name[512]{};
+        wchar_t value[32768]{};
+        DWORD type = 0;
+        for (;;) {
+            DWORD nameLength = static_cast<DWORD>(std::size(name));
+            DWORD valueLength = static_cast<DWORD>(sizeof(value));
+            const LONG result = RegEnumValueW(
+                key, index++, name, &nameLength, nullptr, &type,
+                reinterpret_cast<BYTE*>(value), &valueLength);
+            if (result == ERROR_NO_MORE_ITEMS) break;
+            if (result != ERROR_SUCCESS) break;
+            if (type == REG_SZ || type == REG_EXPAND_SZ) {
+                value[(std::size(value) - 1)] = L'\0';
+                stateValues[name] = value;
+            }
+        }
+        RegCloseKey(key);
+    }
+
+    void putRegistryValue(const wchar_t* key, const std::wstring& value) const {
+        HKEY handle = nullptr;
+        if (RegCreateKeyExW(HKEY_CURRENT_USER, kSettingsRegistryKey, 0, nullptr,
+                            0, KEY_WRITE, nullptr, &handle, nullptr) !=
+            ERROR_SUCCESS) return;
+        RegSetValueExW(handle, key, 0, REG_SZ,
+                       reinterpret_cast<const BYTE*>(value.c_str()),
+                       static_cast<DWORD>((value.size() + 1) * sizeof(wchar_t)));
+        RegCloseKey(handle);
+    }
+
     void loadStateStore() const {
         if (stateLoaded) return;
         stateLoaded = true;
+        if (hasResetMarker()) {
+            stateValues.clear();
+            if (flushStateStore()) clearResetMarker();
+            return;
+        }
         std::ifstream file(settingsPath(), std::ios::binary);
         if (!file) return;
         std::string bytes((std::istreambuf_iterator<char>(file)),
@@ -1423,6 +1506,7 @@ struct AppState {
             if (key.empty()) continue;
             stateValues[key] = unescapeStateValue(line.substr(equals + 1));
         }
+        loadRegistryValues();
     }
 
     bool flushStateStore() const {
@@ -1468,6 +1552,7 @@ struct AppState {
     void putIni(const wchar_t* key, const std::wstring& value) {
         loadStateStore();
         stateValues[key] = value;
+        putRegistryValue(key, value);
         flushStateStore();
     }
 
@@ -3287,11 +3372,12 @@ LRESULT CALLBACK SettingsProc(HWND window, UINT message, WPARAM wParam, LPARAM l
             }
             state->app->stateValues.clear();
             state->app->stateLoaded = true;
-            if (!state->app->flushStateStore()) {
-                MessageBoxW(window, L"无法写入配置文件，请检查文件是否被占用。",
+            if (!requestResetMarker()) {
+                MessageBoxW(window, L"无法写入重置标记，请检查系统权限。",
                             L"重置本地缓存", MB_OK | MB_ICONERROR);
                 return 0;
             }
+            RegDeleteTreeW(HKEY_CURRENT_USER, L"Software\\CrucibleCpp");
             state->app->skipSaveOnExit = true;
             MessageBoxW(window, L"设置、协议状态和启动计数已清空，软件将退出。",
                         L"重置本地缓存", MB_OK | MB_ICONINFORMATION);
