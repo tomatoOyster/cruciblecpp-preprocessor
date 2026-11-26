@@ -3199,11 +3199,24 @@ LRESULT CALLBACK SettingsProc(HWND window, UINT message, WPARAM wParam, LPARAM l
                             MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES) {
                 return 0;
             }
+            const std::filesystem::path directory =
+                state->app->settingsPath().parent_path();
+            const std::wstring settingsFile = state->app->settingsPath().wstring();
+            WritePrivateProfileStringW(nullptr, nullptr, nullptr,
+                                       settingsFile.c_str());
             std::error_code error;
-            const std::filesystem::path directory = state->app->settingsPath().parent_path();
-            std::filesystem::remove_all(directory, error);
+            for (int attempt = 0; attempt < 6; ++attempt) {
+                error.clear();
+                std::filesystem::remove_all(directory, error);
+                if (!error) break;
+                Sleep(80);
+            }
             if (error) {
-                MessageBoxW(window, L"删除本地缓存失败，请检查文件权限。",
+                std::wstring message =
+                    L"删除本地缓存失败：\n" + directory.wstring() +
+                    L"\n\n请关闭其他 CrucibleCpp 实例后重试。\n错误：" +
+                    utf8ToWide(error.message());
+                MessageBoxW(window, message.c_str(),
                             L"重置本地缓存", MB_OK | MB_ICONERROR);
                 return 0;
             }
@@ -3564,6 +3577,14 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
 } // namespace
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
+    HANDLE instanceMutex = CreateMutexW(nullptr, TRUE,
+                                        L"Local\\CrucibleCppGuiSingleInstance");
+    if (GetLastError() == ERROR_ALREADY_EXISTS) {
+        MessageBoxW(nullptr, L"CrucibleCpp GUI 已经在运行。",
+                    L"CrucibleCpp GUI", MB_OK | MB_ICONINFORMATION);
+        if (instanceMutex) CloseHandle(instanceMutex);
+        return 0;
+    }
     // Prefer per-monitor v2; otherwise Windows virtualizes GetClientRect on
     // high-DPI displays and the layout no longer matches the real window.
     HMODULE user32 = GetModuleHandleW(L"user32.dll");
