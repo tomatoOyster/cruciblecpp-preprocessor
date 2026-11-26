@@ -2510,9 +2510,7 @@ LRESULT CALLBACK SettingsProc(HWND window, UINT message, WPARAM wParam, LPARAM l
             state->app->skipSaveOnExit = true;
             MessageBoxW(window, L"本地缓存已清空，软件将退出。",
                         L"重置本地缓存", MB_OK | MB_ICONINFORMATION);
-            DestroyWindow(window);
-            PostMessageW(state->app->window, WM_CLOSE, 0, 0);
-            return 0;
+            ExitProcess(0);
         }
         if (LOWORD(wParam) == IDOK) {
             state->app->alwaysShowAnnouncement =
