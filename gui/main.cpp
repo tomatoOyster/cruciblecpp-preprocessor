@@ -61,6 +61,45 @@ COLORREF colorFromHex(const std::wstring& value, COLORREF fallback) {
     return RGB((parsed >> 16) & 0xFF, (parsed >> 8) & 0xFF, parsed & 0xFF);
 }
 
+COLORREF hsvToRgb(int hue, int saturation, int value) {
+    hue = ((hue % 360) + 360) % 360;
+    saturation = std::clamp(saturation, 0, 100);
+    value = std::clamp(value, 0, 100);
+    const int region = hue / 60;
+    const int remainder = hue % 60;
+    const int p = value * (100 - saturation) / 100;
+    const int q = value * (100 - saturation * remainder / 60) / 100;
+    const int t = value * (100 - saturation * (60 - remainder) / 60) / 100;
+    int r = 0, g = 0, b = 0;
+    switch (region) {
+    case 0: r = value; g = t; b = p; break;
+    case 1: r = q; g = value; b = p; break;
+    case 2: r = p; g = value; b = t; break;
+    case 3: r = p; g = q; b = value; break;
+    case 4: r = t; g = p; b = value; break;
+    default: r = value; g = p; b = q; break;
+    }
+    return RGB(r * 255 / 100, g * 255 / 100, b * 255 / 100);
+}
+
+void rgbToHsv(COLORREF color, int& hue, int& saturation, int& value) {
+    const int r = GetRValue(color);
+    const int g = GetGValue(color);
+    const int b = GetBValue(color);
+    const int maximum = std::max({r, g, b});
+    const int minimum = std::min({r, g, b});
+    const int delta = maximum - minimum;
+    value = maximum * 100 / 255;
+    saturation = maximum == 0 ? 0 : delta * 100 / maximum;
+    if (delta == 0) { hue = 0; return; }
+    int result = 0;
+    if (maximum == r) result = 60 * (g - b) / delta;
+    else if (maximum == g) result = 120 + 60 * (b - r) / delta;
+    else result = 240 + 60 * (r - g) / delta;
+    if (result < 0) result += 360;
+    hue = result;
+}
+
 struct ThemeColorDef {
     const wchar_t* key;
     const wchar_t* label;
@@ -621,6 +660,24 @@ std::string comparePreprocessed(const std::string& crucible, const std::string& 
 
 std::vector<std::wstring> splitOptionLines(std::wstring text);
 
+struct ColorRegion {
+    int colorIndex = 0;
+    RECT rect{};
+    const wchar_t* label = L"";
+};
+
+struct AppState;
+void startColorPickMode(AppState* app);
+void stopColorPickMode(AppState* app);
+void updateColorPickHover(AppState* app, POINT point);
+void selectColorRegion(AppState* app, POINT point, bool ctrl);
+void paintColorOverlay(AppState* app, HDC dc);
+void syncPickerFromSelection(AppState* app);
+void applyPickerColor(AppState* app);
+LRESULT CALLBACK ColorOverlayProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
+
+struct SettingsState;
+
 struct AppState {
     HINSTANCE instance = nullptr;
     HWND window = nullptr;
@@ -683,6 +740,24 @@ struct AppState {
     bool alwaysShowAnnouncement = true;
     bool enableCompareGcc = true;
     bool skipSaveOnExit = false;
+    SettingsState* settingsState = nullptr;
+    HWND colorOverlay = nullptr;
+    bool colorPickMode = false;
+    int colorHover = -1;
+    std::vector<int> colorSelection;
+    COLORREF pickerColor = kAccent;
+    int pickerHue = 174;
+    int pickerSat = 95;
+    int pickerVal = 100;
+    HBITMAP wheelBitmap = nullptr;
+    HDC wheelMem = nullptr;
+    void* wheelBits = nullptr;
+    HGDIOBJ wheelOldBitmap = nullptr;
+    int wheelW = 0;
+    int wheelH = 0;
+    int wheelCachedVal = -1;
+    int wheelBarHue = -1;
+    int wheelBarSat = -1;
     bool running = false;
     int exitCode = 0;
     std::string resultOutput;
@@ -779,6 +854,7 @@ struct AppState {
                                              0, 0, 10, 10, window, nullptr,
                                              instance, this);
         ShowWindow(announcementBanner, SW_HIDE);
+        colorOverlay = nullptr;
         outputLabel = CreateWindowExW(0, L"STATIC", L"输出 .i",
                                      WS_CHILD | WS_VISIBLE | SS_LEFT,
                                      0, 0, 10, 10, window,
@@ -1130,16 +1206,17 @@ struct AppState {
         rowTwo.push_back({copyCli, buttonWidthFor(copyCli, 76)});
         rowTwo.push_back({settingsButton, buttonWidthFor(settingsButton, 58)});
         const int gap = 6;
-        const int availableAction = std::max(100, width - editX - margin);
+        const int actionStart = editX + 110;
+        const int availableAction = std::max(100, width - actionStart - margin);
         auto totalWidth = [&](const std::vector<ActionButton>& row) {
             int total = 0;
             for (const auto& button : row) total += button.width + gap;
             return total;
         };
         const int actionRows = totalWidth(rowOne) + totalWidth(rowTwo) <= availableAction ? 1 : 2;
-        int actionX = editX;
+        int actionX = actionStart;
         auto placeRow = [&](const std::vector<ActionButton>& row, int rowY) {
-            actionX = editX;
+            actionX = actionStart;
             for (const auto& button : row) {
                 MoveWindow(button.control, actionX, rowY, button.width, 29, TRUE);
                 actionX += button.width + gap;
@@ -1159,6 +1236,14 @@ struct AppState {
             ShowWindow(announcementBanner, SW_SHOW);
         } else {
             ShowWindow(announcementBanner, SW_HIDE);
+        }
+        if (colorPickMode && colorOverlay) {
+            RECT mainClient{};
+            GetClientRect(window, &mainClient);
+            POINT origin{0, 0};
+            ClientToScreen(window, &origin);
+            SetWindowPos(colorOverlay, HWND_TOPMOST, origin.x, origin.y,
+                         mainClient.right, mainClient.bottom, SWP_SHOWWINDOW);
         }
         const int formRows = 4 + (actionRows - 1);
         formRect = {margin - 8, top - 12, width - margin + 8, top + row * formRows + 12};
@@ -1972,6 +2057,26 @@ struct AppState {
             DragFinish(drop);
             return 0;
         }
+        case WM_MOUSEMOVE:
+            if (colorPickMode) {
+                POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+                updateColorPickHover(this, point);
+                return 0;
+            }
+            break;
+        case WM_LBUTTONDOWN:
+            if (colorPickMode) {
+                POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+                selectColorRegion(this, point, (GetKeyState(VK_CONTROL) & 0x8000) != 0);
+                return 0;
+            }
+            break;
+        case WM_KEYDOWN:
+            if (colorPickMode && wParam == VK_ESCAPE) {
+                stopColorPickMode(this);
+                return 0;
+            }
+            break;
         case WM_CLOSE:
             if (running) {
                 MessageBoxW(window, L"预处理仍在进行，请等待完成。",
@@ -2576,91 +2681,259 @@ struct SettingsState {
     HWND window = nullptr;
     HWND announcement = nullptr;
     HWND compare = nullptr;
-    HWND reset = nullptr;
-    HWND list = nullptr;
-    HWND choose = nullptr;
-    HWND preview = nullptr;
-    HWND uiTrack = nullptr;
-    HWND codeTrack = nullptr;
-    HWND spacingTrack = nullptr;
+    HWND fontHeader = nullptr;
+    HWND colorHeader = nullptr;
     HWND uiValue = nullptr;
+    HWND uiTrack = nullptr;
     HWND codeValue = nullptr;
+    HWND codeTrack = nullptr;
     HWND spacingValue = nullptr;
+    HWND spacingTrack = nullptr;
+    HWND wheel = nullptr;
+    HWND colorMode = nullptr;
+    HWND applyColor = nullptr;
+    HWND colorStatus = nullptr;
+    HWND reset = nullptr;
     HWND fullscreen = nullptr;
     HWND ok = nullptr;
     HWND cancel = nullptr;
-    std::vector<COLORREF> colors;
-    COLORREF previewColor = kAccent;
-    int hotIndex = -1;
+    HWND announcementNote = nullptr;
+    HWND compareNote = nullptr;
+    bool fontOpen = false;
+    bool colorOpen = false;
     bool fullScreenMode = false;
     RECT normalRect{};
 };
 
-void layoutSettings(SettingsState* state, int width, int height) {
-    if (!state || !state->window) return;
-    const int margin = 22;
-    const int listWidth = std::min(370, std::max(250, width / 3));
-    const int contentTop = 170;
-    const int contentBottom = height - 250;
-    const int listHeight = std::max(150, contentBottom - contentTop);
-    MoveWindow(state->list, margin, contentTop, listWidth, listHeight, TRUE);
-    MoveWindow(state->choose, margin, contentTop + listHeight + 8, listWidth, 32, TRUE);
-    const int previewX = margin + listWidth + 20;
-    const int previewWidth = std::max(220, width - previewX - margin);
-    MoveWindow(state->preview, previewX, contentTop, previewWidth, listHeight + 40, TRUE);
-    const int fontTop = height - 200;
-    MoveWindow(state->uiValue, margin, fontTop, 150, 20, TRUE);
-    MoveWindow(state->uiTrack, margin + 154, fontTop - 6, previewWidth + listWidth - 154, 32, TRUE);
-    MoveWindow(state->codeValue, margin, fontTop + 36, 150, 20, TRUE);
-    MoveWindow(state->codeTrack, margin + 154, fontTop + 30, previewWidth + listWidth - 154, 32, TRUE);
-    MoveWindow(state->spacingValue, margin, fontTop + 72, 150, 20, TRUE);
-    MoveWindow(state->spacingTrack, margin + 154, fontTop + 66, previewWidth + listWidth - 154, 32, TRUE);
-    MoveWindow(state->reset, margin, height - 56, 150, 34, TRUE);
-    MoveWindow(state->fullscreen, width - 344, height - 56, 100, 34, TRUE);
-    MoveWindow(state->ok, width - 232, height - 56, 96, 34, TRUE);
-    MoveWindow(state->cancel, width - 126, height - 56, 96, 34, TRUE);
-}
-
 void updateFontLabels(SettingsState* state) {
     if (!state) return;
     wchar_t buffer[64]{};
-    swprintf_s(buffer, L"界面字体大小：%d px", static_cast<int>(SendMessageW(state->uiTrack, TBM_GETPOS, 0, 0)));
+    swprintf_s(buffer, L"界面字体大小：%d px",
+               static_cast<int>(SendMessageW(state->uiTrack, TBM_GETPOS, 0, 0)));
     SetWindowTextW(state->uiValue, buffer);
-    swprintf_s(buffer, L"代码字体大小：%d px", static_cast<int>(SendMessageW(state->codeTrack, TBM_GETPOS, 0, 0)));
+    swprintf_s(buffer, L"代码字体大小：%d px",
+               static_cast<int>(SendMessageW(state->codeTrack, TBM_GETPOS, 0, 0)));
     SetWindowTextW(state->codeValue, buffer);
-    swprintf_s(buffer, L"字间距：%d px", static_cast<int>(SendMessageW(state->spacingTrack, TBM_GETPOS, 0, 0)));
+    swprintf_s(buffer, L"字间距：%d px",
+               static_cast<int>(SendMessageW(state->spacingTrack, TBM_GETPOS, 0, 0)));
     SetWindowTextW(state->spacingValue, buffer);
 }
 
-LRESULT CALLBACK ColorListSubclass(HWND window, UINT message, WPARAM wParam,
-                                      LPARAM lParam, UINT_PTR, DWORD_PTR data) {
-    auto* state = reinterpret_cast<SettingsState*>(data);
-    if (!state) return DefSubclassProc(window, message, wParam, lParam);
-    switch (message) {
-    case WM_MOUSEMOVE: {
-        POINT point{};
-        GetCursorPos(&point);
-        ScreenToClient(window, &point);
-        const LRESULT hit = SendMessageW(window, LB_ITEMFROMPOINT, 0,
-                                         MAKELPARAM(point.x, point.y));
-        const int index = HIWORD(hit) ? -1 : static_cast<int>(LOWORD(hit));
-        if (index != state->hotIndex) {
-            state->hotIndex = index;
-            InvalidateRect(window, nullptr, TRUE);
+int settingsExpandedHeight(const SettingsState* state) {
+    int height = 380;
+    if (state->fontOpen) height += 112;
+    if (state->colorOpen) height += 320;
+    return height;
+}
+
+void layoutSettings(SettingsState* state, int width, int height) {
+    if (!state || !state->window) return;
+    const int margin = 22;
+    const int row = 36;
+    int y = 122;
+    MoveWindow(state->fontHeader, margin, y, width - 2 * margin, 34, TRUE);
+    y += row;
+    if (state->fontOpen) {
+        MoveWindow(state->uiValue, margin, y, 155, 22, TRUE);
+        MoveWindow(state->uiTrack, margin + 158, y - 6, width - 2 * margin - 158, 32, TRUE);
+        MoveWindow(state->codeValue, margin, y + 40, 155, 22, TRUE);
+        MoveWindow(state->codeTrack, margin + 158, y + 34, width - 2 * margin - 158, 32, TRUE);
+        MoveWindow(state->spacingValue, margin, y + 80, 155, 22, TRUE);
+        MoveWindow(state->spacingTrack, margin + 158, y + 74, width - 2 * margin - 158, 32, TRUE);
+        y += 112;
+    }
+    MoveWindow(state->colorHeader, margin, y, width - 2 * margin, 34, TRUE);
+    y += row;
+    if (state->colorOpen) {
+        const int wheelHeight = std::min(240, std::max(160, height - y - 130));
+        MoveWindow(state->wheel, margin, y, width - 2 * margin, wheelHeight, TRUE);
+        y += wheelHeight + 8;
+        MoveWindow(state->colorMode, margin, y, 190, 32, TRUE);
+        MoveWindow(state->applyColor, margin + 198, y, 150, 32, TRUE);
+        MoveWindow(state->colorStatus, margin + 356, y + 5, width - 2 * margin - 356, 24, TRUE);
+    }
+    const int footer = height - 54;
+    MoveWindow(state->reset, margin, footer, 150, 34, TRUE);
+    MoveWindow(state->fullscreen, width - 334, footer, 96, 34, TRUE);
+    MoveWindow(state->ok, width - 232, footer, 96, 34, TRUE);
+    MoveWindow(state->cancel, width - 126, footer, 96, 34, TRUE);
+}
+
+void releaseWheelCache(AppState* app) {
+    if (!app) return;
+    if (app->wheelMem) {
+        if (app->wheelOldBitmap) {
+            SelectObject(app->wheelMem, app->wheelOldBitmap);
         }
-        TRACKMOUSEEVENT tracking{sizeof(tracking), TME_LEAVE, window, 0};
-        TrackMouseEvent(&tracking);
+        DeleteDC(app->wheelMem);
+        app->wheelMem = nullptr;
+    }
+    if (app->wheelBitmap) {
+        DeleteObject(app->wheelBitmap);
+        app->wheelBitmap = nullptr;
+    }
+    app->wheelBits = nullptr;
+    app->wheelOldBitmap = nullptr;
+    app->wheelW = 0;
+    app->wheelH = 0;
+    app->wheelCachedVal = -1;
+    app->wheelBarHue = -1;
+    app->wheelBarSat = -1;
+}
+
+bool ensureWheelCache(AppState* app, HDC reference, int width, int height) {
+    if (!app || width <= 0 || height <= 0) return false;
+    if (app->wheelBitmap && app->wheelW == width && app->wheelH == height) {
+        return true;
+    }
+    releaseWheelCache(app);
+    BITMAPINFO info{};
+    info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    info.bmiHeader.biWidth = width;
+    info.bmiHeader.biHeight = -height;
+    info.bmiHeader.biPlanes = 1;
+    info.bmiHeader.biBitCount = 32;
+    info.bmiHeader.biCompression = BI_RGB;
+    void* bits = nullptr;
+    HBITMAP bitmap = CreateDIBSection(reference, &info, DIB_RGB_COLORS,
+                                      &bits, nullptr, 0);
+    if (!bitmap || !bits) return false;
+    HDC memory = CreateCompatibleDC(reference);
+    if (!memory) {
+        DeleteObject(bitmap);
+        return false;
+    }
+    app->wheelBitmap = bitmap;
+    app->wheelMem = memory;
+    app->wheelBits = bits;
+    app->wheelOldBitmap = SelectObject(memory, bitmap);
+    app->wheelW = width;
+    app->wheelH = height;
+    app->wheelCachedVal = -1;
+    app->wheelBarHue = -1;
+    app->wheelBarSat = -1;
+    std::fill_n(static_cast<std::uint32_t*>(bits),
+                static_cast<std::size_t>(width) * height, 0x00FFFFFFu);
+    return true;
+}
+
+std::uint32_t colorPixel(COLORREF color) {
+    return (static_cast<std::uint32_t>(GetRValue(color)) << 16) |
+           (static_cast<std::uint32_t>(GetGValue(color)) << 8) |
+           static_cast<std::uint32_t>(GetBValue(color));
+}
+
+LRESULT CALLBACK ColorWheelProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+    auto* app = reinterpret_cast<AppState*>(GetWindowLongPtrW(window, GWLP_USERDATA));
+    if (!app) {
+        if (message == WM_NCCREATE) {
+            auto* create = reinterpret_cast<CREATESTRUCTW*>(lParam);
+            app = static_cast<AppState*>(create->lpCreateParams);
+            SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(app));
+        } else {
+            return DefWindowProcW(window, message, wParam, lParam);
+        }
+    }
+    auto pick = [&](int x, int y) {
+        RECT client{};
+        GetClientRect(window, &client);
+        const int fieldHeight = std::max(40, static_cast<int>(client.bottom) - 42);
+        if (y < fieldHeight) {
+            app->pickerHue = std::clamp(x * 360 / std::max(1, static_cast<int>(client.right)), 0, 359);
+            app->pickerSat = std::clamp(y * 100 / std::max(1, fieldHeight), 0, 100);
+        } else {
+            app->pickerVal = std::clamp(x * 100 / std::max(1, static_cast<int>(client.right)), 0, 100);
+        }
+        app->pickerColor = hsvToRgb(app->pickerHue, app->pickerSat, app->pickerVal);
+        InvalidateRect(window, nullptr, FALSE);
+        if (app->settingsState) {
+            PostMessageW(app->settingsState->window, WM_APP + 7, 0, 0);
+        }
+    };
+    switch (message) {
+    case WM_ERASEBKGND:
+        return 1;
+    case WM_PAINT: {
+        PAINTSTRUCT paint{};
+        HDC dc = BeginPaint(window, &paint);
+        RECT client{};
+        GetClientRect(window, &client);
+        const int width = static_cast<int>(client.right);
+        const int height = static_cast<int>(client.bottom);
+        const int fieldHeight = std::max(40, height - 42);
+        if (!ensureWheelCache(app, dc, width, height)) {
+            EndPaint(window, &paint);
+            return 0;
+        }
+        auto* pixels = static_cast<std::uint32_t*>(app->wheelBits);
+        if (app->wheelCachedVal != app->pickerVal) {
+            for (int y = 0; y < fieldHeight; ++y) {
+                const int sat = std::clamp(y * 100 / std::max(1, fieldHeight), 0, 100);
+                for (int x = 0; x < width; ++x) {
+                    const int hue = std::clamp(x * 360 / std::max(1, width), 0, 359);
+                    pixels[static_cast<std::size_t>(y) * width + x] =
+                        colorPixel(hsvToRgb(hue, sat, app->pickerVal));
+                }
+            }
+            app->wheelCachedVal = app->pickerVal;
+        }
+        if (app->wheelBarHue != app->pickerHue ||
+            app->wheelBarSat != app->pickerSat) {
+            const int top = std::max(fieldHeight, height - 34);
+            const int bottom = std::max(top + 1, height - 10);
+            for (int x = 0; x < width; ++x) {
+                const int value = std::clamp(x * 100 / std::max(1, width), 0, 100);
+                const std::uint32_t color =
+                    colorPixel(hsvToRgb(app->pickerHue, app->pickerSat, value));
+                for (int y = top; y < bottom; ++y) {
+                    pixels[static_cast<std::size_t>(y) * width + x] = color;
+                }
+            }
+            app->wheelBarHue = app->pickerHue;
+            app->wheelBarSat = app->pickerSat;
+        }
+        BitBlt(dc, 0, 0, width, height, app->wheelMem, 0, 0, SRCCOPY);
+        const int crossX = app->pickerHue * width / 360;
+        const int crossY = app->pickerSat * fieldHeight / 100;
+        HPEN shadow = CreatePen(PS_SOLID, 3, RGB(0, 0, 0));
+        HGDIOBJ oldPen = SelectObject(dc, shadow);
+        MoveToEx(dc, crossX - 7, crossY, nullptr);
+        LineTo(dc, crossX + 7, crossY);
+        MoveToEx(dc, crossX, crossY - 7, nullptr);
+        LineTo(dc, crossX, crossY + 7);
+        HPEN white = CreatePen(PS_SOLID, 1, RGB(255, 255, 255));
+        SelectObject(dc, white);
+        MoveToEx(dc, crossX - 7, crossY, nullptr);
+        LineTo(dc, crossX + 7, crossY);
+        MoveToEx(dc, crossX, crossY - 7, nullptr);
+        LineTo(dc, crossX, crossY + 7);
+        SelectObject(dc, oldPen);
+        DeleteObject(shadow);
+        DeleteObject(white);
+        EndPaint(window, &paint);
         return 0;
     }
-    case WM_MOUSELEAVE:
-        state->hotIndex = -1;
-        InvalidateRect(window, nullptr, TRUE);
+    case WM_LBUTTONDOWN:
+        SetCapture(window);
+        pick(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+        return 0;
+    case WM_MOUSEMOVE:
+        if (GetCapture() == window) {
+            pick(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+        }
+        return 0;
+    case WM_LBUTTONUP:
+        ReleaseCapture();
+        return 0;
+    case WM_SIZE:
+        InvalidateRect(window, nullptr, FALSE);
         return 0;
     case WM_NCDESTROY:
-        RemoveWindowSubclass(window, ColorListSubclass, 1);
-        break;
+        releaseWheelCache(app);
+        SetWindowLongPtrW(window, GWLP_USERDATA, 0);
+        return 0;
     }
-    return DefSubclassProc(window, message, wParam, lParam);
+    return DefWindowProcW(window, message, wParam, lParam);
 }
 
 LRESULT CALLBACK SettingsProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -2680,97 +2953,96 @@ LRESULT CALLBACK SettingsProc(HWND window, UINT message, WPARAM wParam, LPARAM l
         const DWORD labelStyle = WS_CHILD | WS_VISIBLE | SS_LEFT;
         const DWORD checkStyle = WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX;
         HWND title = CreateWindowExW(0, L"STATIC", L"设置", labelStyle,
-                                     22, 16, 500, 34, window, nullptr,
+                                     22, 14, 500, 38, window, nullptr,
                                      state->app->instance, nullptr);
         state->announcement = CreateWindowExW(0, L"BUTTON", L"每次启动展示公告",
                                               checkStyle, 22, 58, 520, 26, window,
                                               reinterpret_cast<HMENU>(3001),
                                               state->app->instance, nullptr);
-        HWND announcementNote = CreateWindowExW(0, L"STATIC",
-            L"开启：每次启动都显示公告。关闭：手动关闭后，只有公告 ID 变化时才显示。",
-            labelStyle, 44, 84, 660, 20, window, nullptr, state->app->instance, nullptr);
         state->compare = CreateWindowExW(0, L"BUTTON", L"显示“对比 g++ -E”按钮",
-                                         checkStyle, 22, 104, 520, 26, window,
+                                         checkStyle, 22, 88, 520, 26, window,
                                          reinterpret_cast<HMENU>(3002),
                                          state->app->instance, nullptr);
-        HWND colorLabel = CreateWindowExW(0, L"STATIC", L"颜色块（Ctrl 多选；选择颜色后应用到所有选中块）",
-                                          labelStyle, 22, 136, 700, 22, window, nullptr,
-                                          state->app->instance, nullptr);
-        state->list = CreateWindowExW(WS_EX_CLIENTEDGE, WC_LISTBOXW, L"",
-                                      WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL |
-                                          LBS_OWNERDRAWFIXED | LBS_EXTENDEDSEL |
-                                          LBS_HASSTRINGS | LBS_NOTIFY,
-                                      22, 166, 350, 300, window,
-                                      reinterpret_cast<HMENU>(4001), state->app->instance,
-                                      nullptr);
-        state->choose = CreateWindowExW(0, L"BUTTON", L"选择颜色…",
-                                        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-                                        22, 470, 350, 32, window,
-                                        reinterpret_cast<HMENU>(4002), state->app->instance,
-                                        nullptr);
-        state->preview = CreateWindowExW(WS_EX_CLIENTEDGE, L"STATIC", L"",
-                                         WS_CHILD | WS_VISIBLE | SS_OWNERDRAW,
-                                         392, 166, 500, 440, window,
-                                         reinterpret_cast<HMENU>(4010), state->app->instance,
-                                         nullptr);
+        state->fontHeader = CreateWindowExW(0, L"BUTTON", L"▶  字体与间距",
+                                            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+                                            22, 122, 600, 34, window,
+                                            reinterpret_cast<HMENU>(4001), state->app->instance,
+                                            nullptr);
+        state->colorHeader = CreateWindowExW(0, L"BUTTON", L"▶  颜色与调色盘",
+                                             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+                                             22, 158, 600, 34, window,
+                                             reinterpret_cast<HMENU>(4002), state->app->instance,
+                                             nullptr);
         state->uiValue = CreateWindowExW(0, L"STATIC", L"", labelStyle,
-                                         22, 540, 150, 20, window, nullptr,
+                                         22, 200, 160, 22, window, nullptr,
                                          state->app->instance, nullptr);
         state->uiTrack = CreateWindowExW(0, TRACKBAR_CLASSW, L"",
-                                         WS_CHILD | WS_VISIBLE | WS_TABSTOP | TBS_HORZ |
-                                             TBS_AUTOTICKS,
-                                         176, 534, 500, 32, window,
+                                         WS_CHILD | WS_TABSTOP | TBS_HORZ | TBS_AUTOTICKS,
+                                         180, 194, 500, 32, window,
                                          reinterpret_cast<HMENU>(4003), state->app->instance,
                                          nullptr);
         state->codeValue = CreateWindowExW(0, L"STATIC", L"", labelStyle,
-                                          22, 576, 150, 20, window, nullptr,
+                                          22, 240, 160, 22, window, nullptr,
                                           state->app->instance, nullptr);
         state->codeTrack = CreateWindowExW(0, TRACKBAR_CLASSW, L"",
-                                          WS_CHILD | WS_VISIBLE | WS_TABSTOP | TBS_HORZ |
-                                              TBS_AUTOTICKS,
-                                          176, 570, 500, 32, window,
+                                          WS_CHILD | WS_TABSTOP | TBS_HORZ | TBS_AUTOTICKS,
+                                          180, 234, 500, 32, window,
                                           reinterpret_cast<HMENU>(4004), state->app->instance,
                                           nullptr);
         state->spacingValue = CreateWindowExW(0, L"STATIC", L"", labelStyle,
-                                              22, 612, 150, 20, window, nullptr,
+                                              22, 280, 160, 22, window, nullptr,
                                               state->app->instance, nullptr);
         state->spacingTrack = CreateWindowExW(0, TRACKBAR_CLASSW, L"",
-                                              WS_CHILD | WS_VISIBLE | WS_TABSTOP | TBS_HORZ |
-                                                  TBS_AUTOTICKS,
-                                              176, 606, 500, 32, window,
+                                              WS_CHILD | WS_TABSTOP | TBS_HORZ | TBS_AUTOTICKS,
+                                              180, 274, 500, 32, window,
                                               reinterpret_cast<HMENU>(4005), state->app->instance,
                                               nullptr);
+        state->wheel = CreateWindowExW(WS_EX_CLIENTEDGE, L"CrucibleCppColorWheel", L"",
+                                       WS_CHILD, 22, 200, 600, 220, window, nullptr,
+                                       state->app->instance, state->app);
+        state->colorMode = CreateWindowExW(0, L"BUTTON", L"开始界面取色",
+                                           WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
+                                           22, 430, 190, 32, window,
+                                           reinterpret_cast<HMENU>(4007), state->app->instance,
+                                           nullptr);
+        state->applyColor = CreateWindowExW(0, L"BUTTON", L"应用颜色",
+                                            WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
+                                            220, 430, 150, 32, window,
+                                            reinterpret_cast<HMENU>(4008), state->app->instance,
+                                            nullptr);
+        state->colorStatus = CreateWindowExW(0, L"STATIC", L"点击“开始界面取色”，然后悬停正式界面。",
+                                             WS_CHILD | SS_LEFT,
+                                             378, 435, 270, 24, window, nullptr,
+                                             state->app->instance, nullptr);
         state->reset = CreateWindowExW(0, L"BUTTON", L"重置本地缓存",
                                        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-                                       22, 690, 150, 34, window,
+                                       22, 300, 150, 34, window,
                                        reinterpret_cast<HMENU>(3003), state->app->instance,
                                        nullptr);
         state->fullscreen = CreateWindowExW(0, L"BUTTON", L"全屏",
                                             WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-                                            700, 690, 100, 34, window,
+                                            600, 300, 96, 34, window,
                                             reinterpret_cast<HMENU>(4006), state->app->instance,
                                             nullptr);
         state->ok = CreateWindowExW(0, L"BUTTON", L"确定",
                                     WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-                                    810, 690, 96, 34, window,
+                                    700, 300, 96, 34, window,
                                     reinterpret_cast<HMENU>(IDOK), state->app->instance,
                                     nullptr);
         state->cancel = CreateWindowExW(0, L"BUTTON", L"取消",
                                         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-                                        916, 690, 96, 34, window,
+                                        806, 300, 96, 34, window,
                                         reinterpret_cast<HMENU>(IDCANCEL), state->app->instance,
                                         nullptr);
-        for (HWND control : {title, state->announcement, announcementNote, state->compare,
-                             colorLabel, state->uiValue, state->uiTrack, state->codeValue,
-                             state->codeTrack, state->spacingValue, state->spacingTrack,
-                             state->choose, state->reset, state->fullscreen, state->ok,
-                             state->cancel}) {
+        for (HWND control : {title, state->announcement, state->compare, state->fontHeader,
+                             state->colorHeader, state->uiValue, state->uiTrack,
+                             state->codeValue, state->codeTrack, state->spacingValue,
+                             state->spacingTrack, state->colorMode, state->applyColor,
+                             state->colorStatus, state->reset, state->fullscreen,
+                             state->ok, state->cancel}) {
             SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(state->app->uiFont), TRUE);
         }
         SendMessageW(title, WM_SETFONT, reinterpret_cast<WPARAM>(state->app->titleFont), TRUE);
-        SendMessageW(state->list, WM_SETFONT, reinterpret_cast<WPARAM>(state->app->uiFont), TRUE);
-        SetWindowSubclass(state->list, ColorListSubclass, 1,
-                          reinterpret_cast<DWORD_PTR>(state));
         SendMessageW(state->announcement, BM_SETCHECK,
                      state->app->alwaysShowAnnouncement ? BST_CHECKED : BST_UNCHECKED, 0);
         SendMessageW(state->compare, BM_SETCHECK,
@@ -2782,93 +3054,20 @@ LRESULT CALLBACK SettingsProc(HWND window, UINT message, WPARAM wParam, LPARAM l
         SendMessageW(state->codeTrack, TBM_SETPOS, TRUE, state->app->codeFontSize);
         SendMessageW(state->spacingTrack, TBM_SETPOS, TRUE, state->app->letterSpacing);
         updateFontLabels(state);
-        const auto defs = themeColorDefs();
-        state->colors.clear();
-        for (std::size_t i = 0; i < defs.size(); ++i) {
-            SendMessageW(state->list, LB_ADDSTRING, 0,
-                         reinterpret_cast<LPARAM>(defs[i].label));
-            state->colors.push_back(*defs[i].value);
-        }
-        SendMessageW(state->list, LB_SETSEL, TRUE, 0);
-        state->previewColor = state->colors[0];
+        ShowWindow(state->uiValue, SW_HIDE); ShowWindow(state->uiTrack, SW_HIDE);
+        ShowWindow(state->codeValue, SW_HIDE); ShowWindow(state->codeTrack, SW_HIDE);
+        ShowWindow(state->spacingValue, SW_HIDE); ShowWindow(state->spacingTrack, SW_HIDE);
+        ShowWindow(state->wheel, SW_HIDE); ShowWindow(state->colorMode, SW_HIDE);
+        ShowWindow(state->applyColor, SW_HIDE); ShowWindow(state->colorStatus, SW_HIDE);
+        state->app->settingsState = state;
         RECT client{};
         GetClientRect(window, &client);
         layoutSettings(state, client.right - client.left, client.bottom - client.top);
         return 0;
     }
-    case WM_SIZE: {
+    case WM_SIZE:
         layoutSettings(state, LOWORD(lParam), HIWORD(lParam));
         return 0;
-    }
-    case WM_MEASUREITEM: {
-        auto* measure = reinterpret_cast<MEASUREITEMSTRUCT*>(lParam);
-        if (measure && measure->CtlID == 4001) measure->itemHeight = 34;
-        return TRUE;
-    }
-    case WM_DRAWITEM: {
-        auto* item = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
-        if (!item) return TRUE;
-        if (item->CtlID == 4010) {
-            RECT client = item->rcItem;
-            HBRUSH background = CreateSolidBrush(kBackground);
-            FillRect(item->hDC, &client, background);
-            DeleteObject(background);
-            RECT card{client.left + 18, client.top + 18, client.right - 18,
-                      client.bottom - 18};
-            HBRUSH cardBrush = CreateSolidBrush(kPanel);
-            HPEN border = CreatePen(PS_SOLID, 1, kBorder);
-            HGDIOBJ oldBrush = SelectObject(item->hDC, cardBrush);
-            HGDIOBJ oldPen = SelectObject(item->hDC, border);
-            RoundRect(item->hDC, card.left, card.top, card.right, card.bottom, 12, 12);
-            SelectObject(item->hDC, oldBrush);
-            SelectObject(item->hDC, oldPen);
-            DeleteObject(cardBrush);
-            DeleteObject(border);
-            RECT swatch{card.left + 28, card.top + 28, card.right - 28,
-                        card.bottom - 72};
-            HBRUSH swatchBrush = CreateSolidBrush(state->previewColor);
-            FillRect(item->hDC, &swatch, swatchBrush);
-            DeleteObject(swatchBrush);
-            FrameRect(item->hDC, &swatch,
-                      reinterpret_cast<HBRUSH>(GetStockObject(GRAY_BRUSH)));
-            SetBkMode(item->hDC, TRANSPARENT);
-            SetTextColor(item->hDC, kMuted);
-            HGDIOBJ oldFont = SelectObject(item->hDC, state->app->uiFont);
-            const std::wstring hex = colorToHex(state->previewColor);
-            RECT text{swatch.left, swatch.bottom + 14, swatch.right, swatch.bottom + 42};
-            DrawTextW(item->hDC, hex.c_str(), -1, &text,
-                      DT_LEFT | DT_SINGLELINE | DT_VCENTER);
-            SelectObject(item->hDC, oldFont);
-            return TRUE;
-        }
-        if (item->CtlID != 4001) return TRUE;
-        const bool selected = (item->itemState & ODS_SELECTED) != 0;
-        const int index = static_cast<int>(item->itemID);
-        const bool hot = index == state->hotIndex;
-        HBRUSH background = CreateSolidBrush(selected ? kAccentSoft
-                                                       : (hot ? RGB(240, 250, 248)
-                                                              : kPanel));
-        FillRect(item->hDC, &item->rcItem, background);
-        DeleteObject(background);
-        if (index < 0 || index >= static_cast<int>(state->colors.size())) return TRUE;
-        RECT swatch{item->rcItem.left + 8, item->rcItem.top + 7,
-                    item->rcItem.left + 28, item->rcItem.top + 27};
-        HBRUSH swatchBrush = CreateSolidBrush(state->colors[index]);
-        FillRect(item->hDC, &swatch, swatchBrush);
-        DeleteObject(swatchBrush);
-        FrameRect(item->hDC, &swatch,
-                  reinterpret_cast<HBRUSH>(GetStockObject(GRAY_BRUSH)));
-        wchar_t label[128]{};
-        SendMessageW(state->list, LB_GETTEXT, index, reinterpret_cast<LPARAM>(label));
-        SetBkMode(item->hDC, TRANSPARENT);
-        SetTextColor(item->hDC, kText);
-        HGDIOBJ oldFont = SelectObject(item->hDC, state->app->uiFont);
-        RECT text{swatch.right + 10, item->rcItem.top, item->rcItem.right - 6,
-                  item->rcItem.bottom};
-        DrawTextW(item->hDC, label, -1, &text, DT_LEFT | DT_SINGLELINE | DT_VCENTER);
-        SelectObject(item->hDC, oldFont);
-        return TRUE;
-    }
     case WM_HSCROLL:
         updateFontLabels(state);
         return 0;
@@ -2878,7 +3077,68 @@ LRESULT CALLBACK SettingsProc(HWND window, UINT message, WPARAM wParam, LPARAM l
         SetTextColor(dc, kText);
         return reinterpret_cast<LRESULT>(state->app->backgroundBrush);
     }
+    case WM_APP + 7: {
+        wchar_t status[128]{};
+        if (state->app->colorPickMode) {
+            swprintf_s(status, L"取色中：已选 %zu 块；Ctrl 多选，Esc 结束",
+                       state->app->colorSelection.size());
+            SetWindowTextW(state->colorMode, L"取色中（右键结束）");
+        } else {
+            swprintf_s(status, L"已选 %zu 块；点击“应用颜色”写入",
+                       state->app->colorSelection.size());
+            SetWindowTextW(state->colorMode, L"开始界面取色");
+        }
+        SetWindowTextW(state->colorStatus, status);
+        InvalidateRect(state->wheel, nullptr, TRUE);
+        InvalidateRect(state->colorStatus, nullptr, TRUE);
+        return 0;
+    }
     case WM_COMMAND:
+        if (LOWORD(wParam) == 4001) {
+            state->fontOpen = !state->fontOpen;
+            SetWindowTextW(state->fontHeader, state->fontOpen ? L"▼  字体与间距" : L"▶  字体与间距");
+            for (HWND control : {state->uiValue, state->uiTrack, state->codeValue,
+                                 state->codeTrack, state->spacingValue, state->spacingTrack}) {
+                ShowWindow(control, state->fontOpen ? SW_SHOW : SW_HIDE);
+            }
+            RECT work{};
+            SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
+            const int desired = std::min(settingsExpandedHeight(state),
+                                         static_cast<int>(work.bottom - work.top) - 40);
+            SetWindowPos(window, nullptr, 0, 0, 850, desired,
+                         SWP_NOMOVE | SWP_NOZORDER);
+            return 0;
+        }
+        if (LOWORD(wParam) == 4002) {
+            state->colorOpen = !state->colorOpen;
+            SetWindowTextW(state->colorHeader, state->colorOpen ? L"▼  颜色与调色盘" : L"▶  颜色与调色盘");
+            for (HWND control : {state->wheel, state->colorMode, state->applyColor, state->colorStatus}) {
+                ShowWindow(control, state->colorOpen ? SW_SHOW : SW_HIDE);
+            }
+            RECT work{};
+            SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
+            const int desired = std::min(settingsExpandedHeight(state),
+                                         static_cast<int>(work.bottom - work.top) - 40);
+            SetWindowPos(window, nullptr, 0, 0, 850, desired,
+                         SWP_NOMOVE | SWP_NOZORDER);
+            if (state->colorOpen) {
+                startColorPickMode(state->app);
+                SetWindowTextW(state->colorMode, L"取色中（右键结束）");
+                SetWindowTextW(state->colorStatus, L"悬停正式界面中的块，点击选择；Ctrl 多选，右键结束。");
+            }
+            return 0;
+        }
+        if (LOWORD(wParam) == 4007) {
+            startColorPickMode(state->app);
+            SetWindowTextW(state->colorMode, L"取色中（右键结束）");
+            SetWindowTextW(state->colorStatus, L"悬停正式界面中的块，点击选择；Ctrl 多选，右键结束。");
+            return 0;
+        }
+        if (LOWORD(wParam) == 4008) {
+            applyPickerColor(state->app);
+            SetWindowTextW(state->colorStatus, L"颜色已应用到选中的块。");
+            return 0;
+        }
         if (LOWORD(wParam) == 3003) {
             if (MessageBoxW(window,
                             L"此操作会导致设置选项清空，用户协议状态清空，软件启动计数器清空！",
@@ -2899,36 +3159,6 @@ LRESULT CALLBACK SettingsProc(HWND window, UINT message, WPARAM wParam, LPARAM l
                         L"重置本地缓存", MB_OK | MB_ICONINFORMATION);
             ExitProcess(0);
         }
-        if (LOWORD(wParam) == 4002) {
-            int count = static_cast<int>(SendMessageW(state->list, LB_GETSELCOUNT, 0, 0));
-            std::vector<int> selected;
-            if (count > 0) {
-                std::vector<int> indices(count);
-                SendMessageW(state->list, LB_GETSELITEMS, count,
-                             reinterpret_cast<LPARAM>(indices.data()));
-                for (int i = 0; i < count; ++i) selected.push_back(indices[i]);
-            } else {
-                selected.push_back(0);
-            }
-            COLORREF custom[16]{};
-            CHOOSECOLORW dialog{};
-            dialog.lStructSize = sizeof(dialog);
-            dialog.hwndOwner = window;
-            dialog.rgbResult = state->colors[selected.front()];
-            dialog.lpCustColors = custom;
-            dialog.Flags = CC_FULLOPEN | CC_ANYCOLOR | CC_RGBINIT;
-            if (ChooseColorW(&dialog)) {
-                for (int index : selected) {
-                    if (index >= 0 && index < static_cast<int>(state->colors.size())) {
-                        state->colors[index] = dialog.rgbResult;
-                    }
-                }
-                state->previewColor = dialog.rgbResult;
-                InvalidateRect(state->list, nullptr, TRUE);
-                InvalidateRect(state->preview, nullptr, TRUE);
-            }
-            return 0;
-        }
         if (LOWORD(wParam) == 4006) {
             if (!state->fullScreenMode) {
                 GetWindowRect(window, &state->normalRect);
@@ -2940,21 +3170,11 @@ LRESULT CALLBACK SettingsProc(HWND window, UINT message, WPARAM wParam, LPARAM l
                 state->fullScreenMode = true;
                 SetWindowTextW(state->fullscreen, L"还原");
             } else {
-                SetWindowPos(window, HWND_TOP, state->normalRect.left,
-                             state->normalRect.top,
+                SetWindowPos(window, HWND_TOP, state->normalRect.left, state->normalRect.top,
                              state->normalRect.right - state->normalRect.left,
-                             state->normalRect.bottom - state->normalRect.top,
-                             SWP_SHOWWINDOW);
+                             state->normalRect.bottom - state->normalRect.top, SWP_SHOWWINDOW);
                 state->fullScreenMode = false;
                 SetWindowTextW(state->fullscreen, L"全屏");
-            }
-            return 0;
-        }
-        if (LOWORD(wParam) == 4001 && HIWORD(wParam) == LBN_SELCHANGE) {
-            int index = static_cast<int>(SendMessageW(state->list, LB_GETCURSEL, 0, 0));
-            if (index >= 0 && index < static_cast<int>(state->colors.size())) {
-                state->previewColor = state->colors[index];
-                InvalidateRect(state->preview, nullptr, TRUE);
             }
             return 0;
         }
@@ -2963,54 +3183,44 @@ LRESULT CALLBACK SettingsProc(HWND window, UINT message, WPARAM wParam, LPARAM l
                 SendMessageW(state->announcement, BM_GETCHECK, 0, 0) == BST_CHECKED;
             state->app->enableCompareGcc =
                 SendMessageW(state->compare, BM_GETCHECK, 0, 0) == BST_CHECKED;
-            state->app->uiFontSize = static_cast<int>(
-                SendMessageW(state->uiTrack, TBM_GETPOS, 0, 0));
-            state->app->codeFontSize = static_cast<int>(
-                SendMessageW(state->codeTrack, TBM_GETPOS, 0, 0));
-            state->app->letterSpacing = static_cast<int>(
-                SendMessageW(state->spacingTrack, TBM_GETPOS, 0, 0));
-            const auto defs = themeColorDefs();
-            for (std::size_t i = 0; i < defs.size(); ++i) {
-                *defs[i].value = state->colors[i];
-            }
-            state->app->putIni(L"alwaysShowAnnouncement",
-                               state->app->alwaysShowAnnouncement ? L"1" : L"0");
-            state->app->putIni(L"enableCompareGcc",
-                               state->app->enableCompareGcc ? L"1" : L"0");
+            state->app->uiFontSize = static_cast<int>(SendMessageW(state->uiTrack, TBM_GETPOS, 0, 0));
+            state->app->codeFontSize = static_cast<int>(SendMessageW(state->codeTrack, TBM_GETPOS, 0, 0));
+            state->app->letterSpacing = static_cast<int>(SendMessageW(state->spacingTrack, TBM_GETPOS, 0, 0));
+            state->app->putIni(L"alwaysShowAnnouncement", state->app->alwaysShowAnnouncement ? L"1" : L"0");
+            state->app->putIni(L"enableCompareGcc", state->app->enableCompareGcc ? L"1" : L"0");
             state->app->putIni(L"uiFontSize", std::to_wstring(state->app->uiFontSize));
             state->app->putIni(L"codeFontSize", std::to_wstring(state->app->codeFontSize));
             state->app->putIni(L"letterSpacing", std::to_wstring(state->app->letterSpacing));
-            for (const auto& def : defs) {
-                state->app->putIni(def.key, colorToHex(*def.value));
-            }
-            state->app->applyThemeColors();
             state->app->rebuildFonts();
             state->app->applyDisplaySettings();
-            state->app->layoutForWindow();
-            if (state->app->alwaysShowAnnouncement && !state->app->announcementVisible &&
-                !state->app->announcement.title.empty() &&
-                !state->app->announcement.body.empty()) {
-                state->app->showAnnouncement();
-            }
             DestroyWindow(window);
             return 0;
         }
         if (LOWORD(wParam) == IDCANCEL) {
+            stopColorPickMode(state->app);
             DestroyWindow(window);
             return 0;
         }
         break;
     case WM_CLOSE:
+        stopColorPickMode(state->app);
         DestroyWindow(window);
         return 0;
     case WM_NCDESTROY:
+        stopColorPickMode(state->app);
+        state->app->settingsState = nullptr;
         SetWindowLongPtrW(window, GWLP_USERDATA, 0);
+        delete state;
         return 0;
     }
     return DefWindowProcW(window, message, wParam, lParam);
 }
 
 void showSettingsDialog(AppState* app) {
+    if (app->settingsState) {
+        SetForegroundWindow(app->settingsState->window);
+        return;
+    }
     static bool registered = false;
     if (!registered) {
         WNDCLASSEXW windowClass{};
@@ -3020,42 +3230,267 @@ void showSettingsDialog(AppState* app) {
         windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
         windowClass.hbrBackground = app->backgroundBrush;
         windowClass.lpszClassName = L"CrucibleCppSettingsWindow";
-        if (!RegisterClassExW(&windowClass)) return;
+        RegisterClassExW(&windowClass);
+        WNDCLASSEXW wheelClass{};
+        wheelClass.cbSize = sizeof(wheelClass);
+        wheelClass.lpfnWndProc = ColorWheelProc;
+        wheelClass.hInstance = app->instance;
+        wheelClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+        wheelClass.hbrBackground = nullptr;
+        wheelClass.lpszClassName = L"CrucibleCppColorWheel";
+        RegisterClassExW(&wheelClass);
         registered = true;
     }
-    SettingsState state;
-    state.app = app;
-    RECT parent{};
-    GetWindowRect(app->window, &parent);
+    auto* state = new SettingsState{};
+    state->app = app;
     RECT work{};
     SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
-    const int width = std::min(1180, std::max(720, static_cast<int>(work.right - work.left) - 80));
-    const int height = std::min(820, std::max(620, static_cast<int>(work.bottom - work.top) - 80));
-    EnableWindow(app->window, FALSE);
+    const int width = 850;
+    const int height = 380;
     HWND dialog = CreateWindowExW(
-        WS_EX_DLGMODALFRAME, L"CrucibleCppSettingsWindow", L"CrucibleCpp 设置",
-        WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_SIZEBOX | WS_VISIBLE,
+        WS_EX_TOPMOST | WS_EX_DLGMODALFRAME, L"CrucibleCppSettingsWindow",
+        L"CrucibleCpp 设置", WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_VISIBLE,
         work.left + std::max(20, (static_cast<int>(work.right - work.left) - width) / 2),
         work.top + std::max(20, (static_cast<int>(work.bottom - work.top) - height) / 2),
-        width, height, app->window, nullptr, app->instance, &state);
+        width, height, app->window, nullptr, app->instance, state);
     if (!dialog) {
-        EnableWindow(app->window, TRUE);
+        delete state;
         return;
     }
     UpdateWindow(dialog);
-    MSG message{};
-    while (IsWindow(dialog) && GetMessageW(&message, nullptr, 0, 0)) {
-        if (!IsDialogMessageW(dialog, &message)) {
-            TranslateMessage(&message);
-            DispatchMessageW(&message);
-        }
-    }
-    EnableWindow(app->window, TRUE);
-    SetForegroundWindow(app->window);
 }
 
 void AppState::showSettings() {
     showSettingsDialog(this);
+}
+
+std::vector<ColorRegion> colorRegions(AppState* app) {
+    std::vector<ColorRegion> regions;
+    auto addControl = [&](HWND control, int index, const wchar_t* label) {
+        if (!control || !IsWindowVisible(control)) return;
+        RECT rect{};
+        GetWindowRect(control, &rect);
+        MapWindowPoints(HWND_DESKTOP, app->window, reinterpret_cast<POINT*>(&rect), 2);
+        regions.push_back({index, rect, label});
+    };
+    if (app->announcementVisible) {
+        addControl(app->announcementBanner, 3, L"公告卡片");
+    }
+    addControl(app->outputView, 10, L"输出背景");
+    addControl(app->diagView, 11, L"诊断背景");
+    addControl(app->run, 6, L"强调色");
+    addControl(app->compareGcc, 6, L"强调色");
+    addControl(app->compileOutput, 6, L"强调色");
+    addControl(app->options, 7, L"浅强调");
+    addControl(app->copyCli, 6, L"强调色");
+    addControl(app->settingsButton, 6, L"强调色");
+    addControl(app->cancel, 9, L"取消/危险");
+    addControl(app->browseInput, 6, L"强调色");
+    addControl(app->browseOutput, 6, L"强调色");
+    addControl(app->browseGcc, 6, L"强调色");
+    addControl(app->detectGcc, 6, L"强调色");
+    addControl(app->status, 5, L"次要文字");
+    for (HWND label : app->labels) addControl(label, 4, L"正文");
+    RECT client{};
+    GetClientRect(app->window, &client);
+    regions.push_back({2, app->formRect, L"面板"});
+    regions.push_back({1, RECT{0, 0, client.right, 76}, L"顶部栏"});
+    return regions;
+}
+
+int colorRegionIndexAt(AppState* app, POINT point) {
+    const auto regions = colorRegions(app);
+    for (const auto& region : regions) {
+        if (PtInRect(&region.rect, point)) return region.colorIndex;
+    }
+    RECT form = app->formRect;
+    const int edge = 6;
+    if (point.x >= form.left - edge && point.x <= form.right + edge &&
+        point.y >= form.top - edge && point.y <= form.bottom + edge) {
+        if (point.x <= form.left + edge || point.x >= form.right - edge ||
+            point.y <= form.top + edge || point.y >= form.bottom - edge) {
+            return 8;
+        }
+    }
+    RECT client{};
+    GetClientRect(app->window, &client);
+    if (point.y < 76) return 1;
+    if (PtInRect(&form, point)) return 2;
+    return 0;
+}
+
+void syncPickerFromSelection(AppState* app) {
+    if (app->colorSelection.empty()) return;
+    const auto defs = themeColorDefs();
+    const int index = app->colorSelection.front();
+    if (index < 0 || index >= static_cast<int>(defs.size())) return;
+    app->pickerColor = *defs[index].value;
+    rgbToHsv(app->pickerColor, app->pickerHue, app->pickerSat, app->pickerVal);
+}
+
+void startColorPickMode(AppState* app) {
+    if (!app) return;
+    RECT client{};
+    GetClientRect(app->window, &client);
+    POINT origin{client.left, client.top};
+    ClientToScreen(app->window, &origin);
+    if (!app->colorOverlay) {
+        app->colorOverlay = CreateWindowExW(
+            WS_EX_LAYERED | WS_EX_TOOLWINDOW,
+            L"STATIC", L"", WS_POPUP | WS_VISIBLE,
+            origin.x, origin.y, client.right - client.left, client.bottom - client.top,
+            nullptr, nullptr, app->instance, nullptr);
+        if (!app->colorOverlay) return;
+        SetWindowLongPtrW(app->colorOverlay, GWLP_WNDPROC,
+                          reinterpret_cast<LONG_PTR>(ColorOverlayProc));
+        SetWindowLongPtrW(app->colorOverlay, GWLP_USERDATA,
+                          reinterpret_cast<LONG_PTR>(app));
+        SetLayeredWindowAttributes(app->colorOverlay, RGB(255, 0, 255), 0,
+                                   LWA_COLORKEY);
+    }
+    app->colorPickMode = true;
+    SetWindowPos(app->colorOverlay, HWND_TOP, origin.x, origin.y,
+                 client.right - client.left, client.bottom - client.top,
+                 SWP_SHOWWINDOW);
+    app->colorHover = -1;
+    InvalidateRect(app->colorOverlay, nullptr, TRUE);
+}
+
+void stopColorPickMode(AppState* app) {
+    if (!app) return;
+    if (GetCapture() == app->window) ReleaseCapture();
+    app->colorPickMode = false;
+    app->colorHover = -1;
+    if (app->colorOverlay) ShowWindow(app->colorOverlay, SW_HIDE);
+    if (app->settingsState) {
+        PostMessageW(app->settingsState->window, WM_APP + 7, 0, 0);
+    }
+    InvalidateRect(app->window, nullptr, TRUE);
+}
+
+void updateColorPickHover(AppState* app, POINT point) {
+    if (!app || !app->colorPickMode) return;
+    const int index = colorRegionIndexAt(app, point);
+    if (index != app->colorHover) {
+        app->colorHover = index;
+        InvalidateRect(app->colorOverlay, nullptr, TRUE);
+    }
+}
+
+void selectColorRegion(AppState* app, POINT point, bool ctrl) {
+    if (!app || !app->colorPickMode) return;
+    const int index = colorRegionIndexAt(app, point);
+    if (!ctrl) app->colorSelection.clear();
+    auto found = std::find(app->colorSelection.begin(), app->colorSelection.end(), index);
+    if (found == app->colorSelection.end()) {
+        app->colorSelection.push_back(index);
+    } else if (ctrl) {
+        app->colorSelection.erase(found);
+    }
+    syncPickerFromSelection(app);
+    InvalidateRect(app->colorOverlay, nullptr, TRUE);
+    if (app->settingsState) {
+        PostMessageW(app->settingsState->window, WM_APP + 7, 0, 0);
+    }
+}
+
+void paintColorOverlay(AppState* app, HDC dc) {
+    if (!app || !app->colorPickMode) return;
+    RECT client{};
+    GetClientRect(app->colorOverlay, &client);
+    HBRUSH key = CreateSolidBrush(RGB(255, 0, 255));
+    FillRect(dc, &client, key);
+    DeleteObject(key);
+    const auto regions = colorRegions(app);
+    HPEN selectedPen = CreatePen(PS_DOT, 1, kDanger);
+    HPEN hoverPen = CreatePen(PS_SOLID, 3, kAccent);
+    for (const auto& region : regions) {
+        if (std::find(app->colorSelection.begin(), app->colorSelection.end(),
+                      region.colorIndex) != app->colorSelection.end()) {
+            HGDIOBJ old = SelectObject(dc, selectedPen);
+            HGDIOBJ oldBrush = SelectObject(dc, GetStockObject(NULL_BRUSH));
+            Rectangle(dc, region.rect.left, region.rect.top, region.rect.right,
+                      region.rect.bottom);
+            SelectObject(dc, oldBrush);
+            SelectObject(dc, old);
+        }
+    }
+    for (const auto& region : regions) {
+        if (region.colorIndex != app->colorHover) continue;
+        HGDIOBJ old = SelectObject(dc, hoverPen);
+        HGDIOBJ oldBrush = SelectObject(dc, GetStockObject(NULL_BRUSH));
+        Rectangle(dc, region.rect.left, region.rect.top, region.rect.right,
+                  region.rect.bottom);
+        SelectObject(dc, oldBrush);
+        SelectObject(dc, old);
+        RECT label{region.rect.left + 4, region.rect.top + 4,
+                   region.rect.left + 190, region.rect.top + 30};
+        HBRUSH labelBrush = CreateSolidBrush(kAccent);
+        FillRect(dc, &label, labelBrush);
+        DeleteObject(labelBrush);
+        SetBkMode(dc, TRANSPARENT);
+        SetTextColor(dc, RGB(255, 255, 255));
+        HGDIOBJ font = SelectObject(dc, app->uiFont);
+        DrawTextW(dc, region.label, -1, &label,
+                  DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+        SelectObject(dc, font);
+        break;
+    }
+    DeleteObject(selectedPen);
+    DeleteObject(hoverPen);
+}
+
+void applyPickerColor(AppState* app) {
+    if (!app || app->colorSelection.empty()) return;
+    const auto defs = themeColorDefs();
+    for (int index : app->colorSelection) {
+        if (index >= 0 && index < static_cast<int>(defs.size())) {
+            *defs[index].value = app->pickerColor;
+            app->putIni(defs[index].key, colorToHex(app->pickerColor));
+        }
+    }
+    app->applyThemeColors();
+    InvalidateRect(app->window, nullptr, TRUE);
+}
+
+LRESULT CALLBACK ColorOverlayProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+    auto* app = reinterpret_cast<AppState*>(GetWindowLongPtrW(window, GWLP_USERDATA));
+    if (!app) {
+        if (message == WM_NCCREATE) {
+            auto* create = reinterpret_cast<CREATESTRUCTW*>(lParam);
+            app = static_cast<AppState*>(create->lpCreateParams);
+            SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(app));
+        } else {
+            return DefWindowProcW(window, message, 0, 0);
+        }
+    }
+    switch (message) {
+    case WM_ERASEBKGND:
+        return 1;
+    case WM_PAINT: {
+        PAINTSTRUCT paint{};
+        HDC dc = BeginPaint(window, &paint);
+        paintColorOverlay(app, dc);
+        EndPaint(window, &paint);
+        return 0;
+    }
+    case WM_MOUSEMOVE: {
+        POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+        MapWindowPoints(window, app->window, &point, 1);
+        updateColorPickHover(app, point);
+        return 0;
+    }
+    case WM_LBUTTONDOWN: {
+        POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+        MapWindowPoints(window, app->window, &point, 1);
+        selectColorRegion(app, point, (GetKeyState(VK_CONTROL) & 0x8000) != 0);
+        return 0;
+    }
+    case WM_RBUTTONUP:
+        stopColorPickMode(app);
+        return 0;
+    }
+    return DefWindowProcW(window, message, 0, 0);
 }
 
 AppState* stateFrom(HWND window) {
@@ -3144,6 +3579,15 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
     bannerClass.hbrBackground = nullptr;
     bannerClass.lpszClassName = L"CrucibleCppAnnouncementBanner";
     RegisterClassExW(&bannerClass);
+
+    WNDCLASSEXW overlayClass{};
+    overlayClass.cbSize = sizeof(overlayClass);
+    overlayClass.lpfnWndProc = ColorOverlayProc;
+    overlayClass.hInstance = instance;
+    overlayClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    overlayClass.hbrBackground = nullptr;
+    overlayClass.lpszClassName = L"CrucibleCppColorOverlay";
+    RegisterClassExW(&overlayClass);
 
     WNDCLASSEXW windowClass{};
     windowClass.cbSize = sizeof(windowClass);
