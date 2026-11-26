@@ -2923,6 +2923,7 @@ LRESULT CALLBACK ColorWheelProc(HWND window, UINT message, WPARAM wParam, LPARAM
         }
         return 0;
     case WM_LBUTTONUP:
+        if (!app->colorSelection.empty()) applyPickerColor(app);
         ReleaseCapture();
         return 0;
     case WM_SIZE:
