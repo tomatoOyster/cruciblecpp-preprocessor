@@ -3574,28 +3574,59 @@ std::filesystem::path appDataConfigDirectory() {
     return base / L"CrucibleCpp";
 }
 
-std::filesystem::path cacheResetMarker() {
-    wchar_t buffer[MAX_PATH * 2]{};
-    const DWORD length = GetTempPathW(static_cast<DWORD>(std::size(buffer)), buffer);
-    std::filesystem::path base = length > 0 ? std::filesystem::path(buffer)
-                                            : std::filesystem::path(L".");
-    return base / L"CrucibleCpp-reset.flag";
-}
+constexpr wchar_t kResetRegistryKey[] = L"Software\\CrucibleCpp";
+constexpr wchar_t kResetValue[] = L"PendingCacheReset";
 
 bool scheduleCacheReset(std::wstring& errorText) {
-    std::ofstream marker(cacheResetMarker(), std::ios::binary | std::ios::trunc);
-    if (!marker) {
-        errorText = L"无法创建重置标记文件。";
+    HKEY key = nullptr;
+    LONG result = RegCreateKeyExW(HKEY_CURRENT_USER, kResetRegistryKey, 0,
+                                  nullptr, 0, KEY_SET_VALUE, nullptr, &key,
+                                  nullptr);
+    if (result != ERROR_SUCCESS) {
+        errorText = L"无法创建重置标记（注册表错误 " +
+                    std::to_wstring(result) + L"）。";
         return false;
     }
-    marker << "reset";
-    marker.close();
+    const DWORD enabled = 1;
+    result = RegSetValueExW(key, kResetValue, 0, REG_DWORD,
+                            reinterpret_cast<const BYTE*>(&enabled),
+                            sizeof(enabled));
+    RegCloseKey(key);
+    if (result != ERROR_SUCCESS) {
+        errorText = L"无法写入重置标记（注册表错误 " +
+                    std::to_wstring(result) + L"）。";
+        return false;
+    }
     return true;
 }
 
+bool hasPendingCacheReset() {
+    HKEY key = nullptr;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, kResetRegistryKey, 0,
+                      KEY_QUERY_VALUE, &key) != ERROR_SUCCESS) {
+        return false;
+    }
+    DWORD value = 0;
+    DWORD size = sizeof(value);
+    DWORD type = 0;
+    const LONG result = RegQueryValueExW(key, kResetValue, nullptr, &type,
+                                         reinterpret_cast<BYTE*>(&value),
+                                         &size);
+    RegCloseKey(key);
+    return result == ERROR_SUCCESS && type == REG_DWORD && value != 0;
+}
+
+void clearPendingCacheReset() {
+    HKEY key = nullptr;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, kResetRegistryKey, 0,
+                      KEY_SET_VALUE, &key) == ERROR_SUCCESS) {
+        RegDeleteValueW(key, kResetValue);
+        RegCloseKey(key);
+    }
+}
+
 bool performPendingCacheReset(std::wstring& errorText) {
-    const std::filesystem::path marker = cacheResetMarker();
-    if (!std::filesystem::exists(marker)) return true;
+    if (!hasPendingCacheReset()) return true;
     std::error_code error;
     const std::filesystem::path directory = appDataConfigDirectory();
     for (int attempt = 0; attempt < 12; ++attempt) {
@@ -3607,11 +3638,10 @@ bool performPendingCacheReset(std::wstring& errorText) {
     if (error) {
         errorText = L"删除本地缓存失败：\n" + directory.wstring() +
                     L"\n\n错误：" + utf8ToWide(error.message()) +
-                    L"\n请关闭杀毒软件对配置目录的占用后重新启动。";
+                    L"\n标记已保留，下次启动会继续尝试。";
         return false;
     }
-    error.clear();
-    std::filesystem::remove(marker, error);
+    clearPendingCacheReset();
     return true;
 }
 
