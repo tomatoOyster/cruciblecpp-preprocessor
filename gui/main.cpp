@@ -2936,6 +2936,25 @@ LRESULT CALLBACK ColorWheelProc(HWND window, UINT message, WPARAM wParam, LPARAM
     return DefWindowProcW(window, message, wParam, lParam);
 }
 
+void commitSettings(SettingsState* state) {
+    if (!state) return;
+    state->app->alwaysShowAnnouncement =
+        SendMessageW(state->announcement, BM_GETCHECK, 0, 0) == BST_CHECKED;
+    state->app->enableCompareGcc =
+        SendMessageW(state->compare, BM_GETCHECK, 0, 0) == BST_CHECKED;
+    state->app->uiFontSize = static_cast<int>(
+        SendMessageW(state->uiTrack, TBM_GETPOS, 0, 0));
+    state->app->codeFontSize = static_cast<int>(
+        SendMessageW(state->codeTrack, TBM_GETPOS, 0, 0));
+    state->app->letterSpacing = static_cast<int>(
+        SendMessageW(state->spacingTrack, TBM_GETPOS, 0, 0));
+    if (!state->app->colorSelection.empty()) applyPickerColor(state->app);
+    state->app->saveSettings();
+    state->app->rebuildFonts();
+    state->app->applyDisplaySettings();
+    state->app->layoutForWindow();
+}
+
 LRESULT CALLBACK SettingsProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
     auto* state = reinterpret_cast<SettingsState*>(GetWindowLongPtrW(window, GWLP_USERDATA));
     if (!state) {
@@ -3070,6 +3089,16 @@ LRESULT CALLBACK SettingsProc(HWND window, UINT message, WPARAM wParam, LPARAM l
         return 0;
     case WM_HSCROLL:
         updateFontLabels(state);
+        state->app->uiFontSize = static_cast<int>(
+            SendMessageW(state->uiTrack, TBM_GETPOS, 0, 0));
+        state->app->codeFontSize = static_cast<int>(
+            SendMessageW(state->codeTrack, TBM_GETPOS, 0, 0));
+        state->app->letterSpacing = static_cast<int>(
+            SendMessageW(state->spacingTrack, TBM_GETPOS, 0, 0));
+        state->app->putIni(L"uiFontSize", std::to_wstring(state->app->uiFontSize));
+        state->app->putIni(L"codeFontSize", std::to_wstring(state->app->codeFontSize));
+        state->app->putIni(L"letterSpacing", std::to_wstring(state->app->letterSpacing));
+        state->app->rebuildFonts();
         return 0;
     case WM_CTLCOLORSTATIC: {
         HDC dc = reinterpret_cast<HDC>(wParam);
@@ -3174,20 +3203,7 @@ LRESULT CALLBACK SettingsProc(HWND window, UINT message, WPARAM wParam, LPARAM l
             return 0;
         }
         if (LOWORD(wParam) == IDOK) {
-            state->app->alwaysShowAnnouncement =
-                SendMessageW(state->announcement, BM_GETCHECK, 0, 0) == BST_CHECKED;
-            state->app->enableCompareGcc =
-                SendMessageW(state->compare, BM_GETCHECK, 0, 0) == BST_CHECKED;
-            state->app->uiFontSize = static_cast<int>(SendMessageW(state->uiTrack, TBM_GETPOS, 0, 0));
-            state->app->codeFontSize = static_cast<int>(SendMessageW(state->codeTrack, TBM_GETPOS, 0, 0));
-            state->app->letterSpacing = static_cast<int>(SendMessageW(state->spacingTrack, TBM_GETPOS, 0, 0));
-            state->app->putIni(L"alwaysShowAnnouncement", state->app->alwaysShowAnnouncement ? L"1" : L"0");
-            state->app->putIni(L"enableCompareGcc", state->app->enableCompareGcc ? L"1" : L"0");
-            state->app->putIni(L"uiFontSize", std::to_wstring(state->app->uiFontSize));
-            state->app->putIni(L"codeFontSize", std::to_wstring(state->app->codeFontSize));
-            state->app->putIni(L"letterSpacing", std::to_wstring(state->app->letterSpacing));
-            state->app->rebuildFonts();
-            state->app->applyDisplaySettings();
+            commitSettings(state);
             DestroyWindow(window);
             return 0;
         }
@@ -3198,6 +3214,7 @@ LRESULT CALLBACK SettingsProc(HWND window, UINT message, WPARAM wParam, LPARAM l
         }
         break;
     case WM_CLOSE:
+        commitSettings(state);
         stopColorPickMode(state->app);
         DestroyWindow(window);
         return 0;
